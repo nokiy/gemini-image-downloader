@@ -1,0 +1,43 @@
+<!-- [IN]: popup.css stylesheet, jszip.min.js library, popup.js script / popup.css 样式表、jszip.min.js 库、popup.js 脚本 -->
+<!-- [OUT]: Popup UI structure with status, download button, retry controls / 包含状态、下载按钮、重试控件的弹窗 UI 结构 -->
+<!-- [POS]: src/popup/popup.html - UI structure for extension interaction / 扩展交互的 UI 结构 -->
+<!-- Protocol: When updating me, sync this header + parent folder's .folder.md -->
+<!-- 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md -->
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Image Downloader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">🖼️</div>
+      <h1 class="title">Gemini Image Downloader</h1>
+    </header>
+    
+    <main class="main">
+      <div class="status" id="status">
+        <span class="status-icon">🔍</span>
+        <span class="status-text" id="statusText">正在检测图片...</span>
+      </div>
+      
+      <button class="download-btn" id="downloadBtn" disabled>
+        <span class="btn-icon">📥</span>
+        <span class="btn-text">下载所有图片</span>
+      </button>
+    </main>
+    
+    <footer class="footer">
+      <button class="retry-btn" id="retryBtn" type="button" hidden>重新检测</button>
+      <p class="hint" id="hint"></p>
+    </footer>
+  </div>
+  
+  <script src="../../libs/jszip.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

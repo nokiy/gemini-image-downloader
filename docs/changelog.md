@@ -1,0 +1,179 @@
+# Gemini Image Downloader - 执行记录 (Changelog)
+
+> 📅 项目开始：2025-12-23
+
+---
+
+## 记录说明
+
+本文档记录 Agent 每次执行任务的详细过程，包括：
+- 执行时间
+- 任务描述
+- 执行结果
+- 产出文件
+
+---
+
+## 执行记录
+
+### 📅 2025-12-23 11:40 - 需求调研与产品定义
+
+**任务**：与用户沟通需求，定义产品边界
+
+**过程**：
+1. 以产品经理视角向用户收集需求信息
+2. 确认核心需求：一键批量下载 Gemini 对话中 AI 生成的高清图片
+3. 确认 MVP 范围和命名规则
+
+**产出**：
+- `docs/ideas.md` - 产品草稿
+
+---
+
+### 📅 2025-12-23 11:45 - 技术调研
+
+**任务**：分析 Gemini 网页版页面结构
+
+**过程**：
+1. 使用浏览器工具打开 Gemini 页面
+2. 生成测试图片并分析 DOM 结构
+3. 发现图片 URL 规律和高清获取方式
+
+**关键发现**：
+| 项目 | 结论 |
+|------|------|
+| 图片选择器 | `img[src*="googleusercontent.com/gg-dl/"]` |
+| 高清策略 | 早期方案：URL 末尾 `=sXXXX-rj` → `=s0`；v1.1：保留原始 URL |
+| 标题获取 | `.conversation.selected div` |
+
+**产出**：
+- 浏览器录屏：`gemini_dom_analysis.webp`
+
+---
+
+### 📅 2025-12-23 11:58 - 创建项目文档体系
+
+**任务**：根据用户要求创建完整的文档体系
+
+**过程**：
+1. 整合前期调研结论
+2. 创建 PRD、SPEC、技术规划文档
+
+**产出**：
+- `docs/prd.md` - 产品需求文档
+- `docs/spec.md` - 功能规格说明
+- `docs/tech_plan.md` - 技术规划与架构
+- `docs/changelog.md` - 执行记录
+
+---
+
+### 📅 2025-12-23 12:02 - 创建测试用例与里程碑规划
+
+**任务**：创建测试用例文档和里程碑规划
+
+**过程**：
+1. 按 M1/M2/M3 组织 13 个测试用例
+2. 将开发任务拆分为 3 个里程碑，每个里程碑可独立验证
+
+**产出**：
+- `docs/test_cases.md` - 测试用例（13个用例）
+- `docs/milestones.md` - 里程碑规划（M1/M2/M3）
+
+### 📅 2025-12-23 12:04 - M1 基础架构开发
+
+**任务**：搭建 Chrome 插件基础框架
+
+**产出文件**：
+```
+gemini-image-downloader/
+├── manifest.json          # 插件配置
+├── popup/
+│   ├── popup.html         # Popup 界面
+│   ├── popup.css          # 样式（渐变设计）
+│   └── popup.js           # 交互逻辑
+├── content/
+│   └── content.js         # 图片检测脚本
+├── libs/
+│   └── jszip.min.js       # ZIP 打包库
+└── icons/
+    ├── icon16.png
+    ├── icon48.png
+    └── icon128.png
+```
+
+**验收**：✅ M1 完成
+
+---
+
+### 📅 2025-12-23 14:27 - M2 核心功能开发
+
+**任务**：实现图片下载、ZIP 打包和智能命名
+
+**实现功能**：
+- ✅ Popup 与 Content Script 消息通信
+- ✅ 高清 URL 处理（v1.0 使用 `=s0`；v1.1 保留原始 URL）
+- ✅ 图片 Fetch 下载
+- ✅ JSZip 打包
+- ✅ 智能命名：`Gemini_{标题}_{时间戳}.zip`
+- ✅ 下载状态提示
+
+**验收**：✅ M2 完成
+
+---
+
+### 📅 2025-12-23 14:33 - M3 完善发布开发
+
+**任务**：边界处理、优化体验、创建使用说明
+
+**完成项目**：
+- ✅ 非 Gemini 页面提示
+- ✅ 无图片情况提示
+- ✅ 网络错误处理
+- ✅ 下载进度显示
+- ✅ README.md 使用说明
+
+**产出**：
+- `gemini-image-downloader/README.md` - 使用说明文档
+
+**验收**：✅ M3 完成
+
+---
+
+### 📅 2025-12-23 15:40 - 稳定性增强（v1.0.0.0）
+
+**任务**：提升图片获取稳定性，减少刷新依赖
+
+**完成项目**：
+- ✅ Popup 添加自动检测（10 秒内每 2 秒重试）与更清晰的状态提示
+- ✅ 内容脚本支持 Shadow DOM 深度扫描与 srcset 解析
+- ✅ 图片按实际格式保存（png/jpg/webp）
+- ✅ ZIP 文件名更稳健的字符清理
+- ✅ ZIP 文件名强制重命名与标题兜底
+- ✅ ZIP 文件名固定为 `Gemini_image.zip`
+- ✅ ZIP 下载通过后台监听重命名，避免随机文件名
+- ✅ 工具栏图标放大提升可见性
+- ✅ Content Script 增加注入守卫与等待图片加载逻辑
+- ✅ 自动注入兜底（scripting 权限）
+- ✅ 文档对齐：PRD/SPEC/Tech Plan/Test Cases
+
+**产出**：
+- `gemini-image-downloader/popup/popup.js` - 重试与注入逻辑
+- `gemini-image-downloader/content/content.js` - 等待加载与注入守卫
+- `gemini-image-downloader/manifest.json` - 新增 `scripting` 权限
+- `docs/prd.md` - 第一性原理问题定义
+- `docs/spec.md` - UI/边界处理更新
+- `docs/tech_plan.md` - 通信流程与权限更新
+- `docs/test_cases.md` - 新增重试用例
+
+**验收**：⏳ 待用户手动测试
+
+---
+
+## 🎉 项目完成
+
+所有里程碑已完成：
+- ✅ M1 - 基础架构
+- ✅ M2 - 核心功能
+- ✅ M3 - 完善发布
+
+插件已可正常使用！
