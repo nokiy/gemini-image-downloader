@@ -3,11 +3,9 @@
 // [POS]: src/background/service_worker.js
 // Protocol: When updating me, sync this header + parent folder's .folder.md
 
-try {
-  importScripts('../../libs/jszip.min.js');
-} catch (e) {
-  console.error('[SW] Failed to load JSZip:', e);
-}
+// 加载 JSZip 库（路径相对于扩展根目录）
+importScripts('/libs/jszip.min.js');
+console.log('[SW] Service Worker initialized, JSZip available:', typeof JSZip !== 'undefined');
 
 const PENDING_KEY = 'pendingDownloadRenames';
 const storage = chrome.storage.session || chrome.storage.local;
@@ -88,6 +86,8 @@ async function handleSingleDownload(url) {
 }
 
 async function handleBatchDownload(urls, senderTabId) {
+  console.log('[SW] handleBatchDownload called with', urls?.length, 'URLs, tabId:', senderTabId);
+  
   if (!urls || urls.length === 0) return { success: false, error: 'No URLs' };
 
   const total = urls.length;

@@ -560,13 +560,16 @@ function handleBatchDownload() {
     return;
   }
 
+  const urls = selectedImages.map(img => img.url);
+  console.log('[GID] Starting batch download with', urls.length, 'URLs:', urls);
+  
   const added = addBatchTask(async () => {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'downloadBatch',
-        urls: selectedImages.map(img => img.url)
+        urls: urls
       }, (response) => {
-        // 响应处理已通过 batchProgress 消息完成
+        console.log('[GID] Batch download response:', response);
         resolve();
       });
     });
