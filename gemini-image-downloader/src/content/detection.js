@@ -102,8 +102,8 @@ function findImagesByDOM() {
       const img = container.querySelector('img.image');
       if (img && img.src && img.src.includes('googleusercontent.com')) {
         images.push({
-          url: getOriginalImageUrl(img.src),      // 原图URL（下载用）
-          thumbnailUrl: getThumbnailUrl(img.src), // 缩略图URL（预览用，加载更快）
+          url: getOriginalImageUrl(img.src),  // 原图URL（下载用，=s0 最高质量）
+          thumbnailUrl: img.src,              // 直接使用已加载的图片URL（浏览器缓存，即时显示）
           element: img,
           container: container,
           method: 'dom'
@@ -138,8 +138,8 @@ function findImagesByURL() {
 
     if (isGenerated && !isAvatar && !isIcon) {
       images.push({
-        url: getOriginalImageUrl(url),      // 原图URL（下载用）
-        thumbnailUrl: getThumbnailUrl(url), // 缩略图URL（预览用，加载更快）
+        url: getOriginalImageUrl(url),  // 原图URL（下载用，=s0 最高质量）
+        thumbnailUrl: url,              // 直接使用已加载的图片URL（浏览器缓存，即时显示）
         element: img,
         container: img.parentElement,
         method: 'url'
