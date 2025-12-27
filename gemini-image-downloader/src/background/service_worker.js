@@ -13,11 +13,6 @@ const PENDING_KEY = 'pendingDownloadRenames';
 const storage = chrome.storage.session || chrome.storage.local;
 
 /* Utility Functions */
-function getBasename(pathname) {
-  if (!pathname) return '';
-  return pathname.split(/[/\\]/).pop() || '';
-}
-
 function getExtension(url, contentType) {
   if (contentType) {
     const type = contentType.split(';')[0].trim().toLowerCase();
@@ -36,43 +31,28 @@ function getExtension(url, contentType) {
   return 'png';
 }
 
-/* Download Tracking & Renaming (from M1) */
-async function trackDownload(downloadId, filename) {
-  const data = await new Promise(r => storage.get(PENDING_KEY, res => r(res[PENDING_KEY] || {})));
-  data[String(downloadId)] = filename;
-  await new Promise(r => storage.set({ [PENDING_KEY]: data }, r));
-}
-
-async function handleDownloadChanged(delta) {
-  if (!delta || !delta.state || delta.state.current !== 'complete') return;
-  const data = await new Promise(r => storage.get(PENDING_KEY, res => r(res[PENDING_KEY] || {})));
-  const expected = data[String(delta.id)];
-  if (!expected) return;
-
-  chrome.downloads.search({ id: delta.id }, (items) => {
-    if (!items || !items[0]) return;
-    const currentBase = getBasename(items[0].filename);
-    if (currentBase !== expected) {
-      chrome.downloads.rename(delta.id, { filename: expected }, () => {
-        if (chrome.runtime.lastError) console.warn('[SW] Rename failed:', chrome.runtime.lastError);
-      });
-    }
-  });
-  
-  delete data[String(delta.id)];
-  storage.set({ [PENDING_KEY]: data });
-}
-
-chrome.downloads.onChanged.addListener(handleDownloadChanged);
+/* Download Filename Interception */
+// 使用 onDeterminingFilename 在下载时拦截并设置正确的文件名
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  // 检查是否是我们的 ZIP 下载（通过 data: URL 判断）
+  if (downloadItem.url && downloadItem.url.startsWith('data:application/zip')) {
+    suggest({ filename: 'Gemini_image.zip', conflictAction: 'uniquify' });
+    return true;
+  }
+  // 不干预其他下载
+  return false;
+});
 
 /* Message Handling */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  const tabId = sender.tab?.id;
+  
   if (request.action === 'downloadSingle') {
     handleSingleDownload(request.url).then(sendResponse);
     return true;
   }
   if (request.action === 'downloadBatch') {
-    handleBatchDownload(request.urls).then(sendResponse);
+    handleBatchDownload(request.urls, tabId).then(sendResponse);
     return true;
   }
   return false;
@@ -107,44 +87,64 @@ async function handleSingleDownload(url) {
   }
 }
 
-async function handleBatchDownload(urls) {
+async function handleBatchDownload(urls, senderTabId) {
   if (!urls || urls.length === 0) return { success: false, error: 'No URLs' };
+
+  const total = urls.length;
+  
+  // 发送进度更新给 content script
+  function sendProgress(current, status, message) {
+    if (senderTabId) {
+      chrome.tabs.sendMessage(senderTabId, {
+        action: 'batchProgress',
+        current,
+        total,
+        status, // 'downloading' | 'packaging' | 'success' | 'error'
+        message
+      }).catch(() => {});
+    }
+  }
 
   try {
     const zip = new JSZip();
     let successCount = 0;
     let failCount = 0;
 
-    const fetches = urls.map(async (url, index) => {
+    // 顺序下载以便显示进度
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      sendProgress(i + 1, 'downloading', `Downloading image ${i + 1} of ${total}...`);
+      
       try {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Status ${response.status}`);
         const blob = await response.blob();
         const ext = getExtension(url, blob.type);
-        const filename = `image_${String(index + 1).padStart(2, '0')}.${ext}`;
+        const filename = `image_${String(i + 1).padStart(2, '0')}.${ext}`;
         zip.file(filename, blob);
         successCount++;
       } catch (e) {
-        console.error(`[SW] Failed to fetch ${url}:`, e);
+        console.error(`[SW] Failed to fetch image ${i + 1}:`, e);
         failCount++;
       }
-    });
-
-    await Promise.all(fetches);
+    }
 
     if (successCount === 0) {
+      sendProgress(total, 'error', 'All downloads failed');
       return { success: false, error: 'All downloads failed', failCount };
     }
+
+    // 打包中
+    sendProgress(total, 'packaging', 'Packaging ZIP file...');
 
     // 生成 base64 格式（Service Worker 不支持 URL.createObjectURL）
     const zipBase64 = await zip.generateAsync({ type: 'base64' });
     const dataUrl = `data:application/zip;base64,${zipBase64}`;
-    const filename = 'Gemini_image.zip';
     
     const downloadId = await new Promise((resolve, reject) => {
       chrome.downloads.download({
         url: dataUrl,
-        filename: filename,
+        filename: 'Gemini_image.zip',
         conflictAction: 'uniquify',
         saveAs: false
       }, (id) => {
@@ -158,13 +158,17 @@ async function handleBatchDownload(urls) {
       });
     });
     
-    // 记录期望的文件名用于下载完成后重命名
-    await trackDownload(downloadId, filename);
+    // 发送成功消息
+    const resultMsg = failCount > 0 
+      ? `Done: ${successCount} succeeded, ${failCount} failed`
+      : `Successfully downloaded ${successCount} images`;
+    sendProgress(total, 'success', resultMsg);
 
     return { success: true, successCount, failCount, downloadId };
 
   } catch (error) {
     console.error('[SW] Batch download failed:', error);
+    sendProgress(total, 'error', `Error: ${error.message}`);
     return { success: false, error: error.message };
   }
 }

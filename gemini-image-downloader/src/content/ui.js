@@ -511,26 +511,17 @@ function handleBatchDownload() {
     return;
   }
 
+  // 立即显示初始状态
+  updateStatusBar(`Preparing ${selectedImages.length} images...`, 'downloading');
+
   addToQueue(async () => {
-    updateStatusBar(`正在打包 ${selectedImages.length} 张图片...`);
-    
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'downloadBatch',
         urls: selectedImages.map(img => img.url)
       }, (response) => {
-        if (response && response.success) {
-          const { successCount, failCount } = response;
-          if (failCount > 0) {
-            showToast(`下载完成：成功 ${successCount} 张，失败 ${failCount} 张`, 'warning');
-          } else {
-            showToast(`${successCount} 张图片下载完成`);
-          }
-        } else {
-          showToast('批量下载失败，请重试', 'error');
-        }
-        updateStatusBar('');
-        resolve(); // 任务完成
+        // 响应处理已通过 batchProgress 消息完成
+        resolve();
       });
     });
   });
@@ -538,12 +529,22 @@ function handleBatchDownload() {
 
 /**
  * 更新状态栏
+ * @param {string} message - 状态消息
+ * @param {string} status - 'idle' | 'downloading' | 'packaging' | 'success' | 'error'
  */
-function updateStatusBar(message) {
+function updateStatusBar(message, status = 'downloading') {
   const statusBar = document.querySelector('.gid-status-bar');
   if (statusBar) {
     statusBar.textContent = message;
+    statusBar.className = `gid-status-bar gid-status-${status}`;
     statusBar.style.display = message ? 'block' : 'none';
+    
+    // 成功或失败状态 3 秒后自动隐藏
+    if (status === 'success' || status === 'error') {
+      setTimeout(() => {
+        statusBar.style.display = 'none';
+      }, 3000);
+    }
   }
 }
 
@@ -573,10 +574,26 @@ function showToast(message, type = 'success') {
 }
 
 /**
+ * 设置消息监听器（接收来自 background 的进度更新）
+ */
+function setupMessageListener() {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'batchProgress') {
+      const { current, total, status, message } = request;
+      console.log('[GID] Progress:', message);
+      updateStatusBar(message, status);
+      sendResponse({ received: true });
+    }
+    return false;
+  });
+}
+
+/**
  * 初始化 UI（带重试）
  */
 function initUI() {
   createDrawer();
+  setupMessageListener();
   
   // 尝试创建图标，如果失败则重试
   let retryCount = 0;
