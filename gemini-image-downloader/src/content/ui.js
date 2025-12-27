@@ -816,9 +816,6 @@ function setupStateListeners() {
   if (stateManager) {
     // 监听状态变化
     stateManager.onStateChange('images', (state) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3797cef2-1e76-41ea-8e0f-a1e58556c062',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:856',message:'State change: images',data:{imageCount:state.images?.length||0,isDrawerOpen:state.ui?.isDrawerOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       updateIcon(state);
       if (state.ui.isDrawerOpen) {
         renderImageList(state);
@@ -826,9 +823,6 @@ function setupStateListeners() {
     });
 
     stateManager.onStateChange('selection', (state) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3797cef2-1e76-41ea-8e0f-a1e58556c062',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:863',message:'State change: selection',data:{selectedCount:state.selectedUrls?.size||0,isDrawerOpen:state.ui?.isDrawerOpen},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       if (state.ui.isDrawerOpen) {
         renderImageList(state);
       }
