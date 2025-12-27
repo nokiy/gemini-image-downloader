@@ -136,26 +136,30 @@ async function handleBatchDownload(urls) {
       return { success: false, error: 'All downloads failed', failCount };
     }
 
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    
-    // 使用 Blob URL 而非 data URL，这样 filename 参数才会生效
-    const blobUrl = URL.createObjectURL(zipBlob);
+    // 生成 base64 格式（Service Worker 不支持 URL.createObjectURL）
+    const zipBase64 = await zip.generateAsync({ type: 'base64' });
+    const dataUrl = `data:application/zip;base64,${zipBase64}`;
     const filename = 'Gemini_image.zip';
     
     const downloadId = await new Promise((resolve, reject) => {
       chrome.downloads.download({
-        url: blobUrl,
+        url: dataUrl,
         filename: filename,
         conflictAction: 'uniquify',
         saveAs: false
       }, (id) => {
-        // 延迟释放 Blob URL
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-        
-        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-        else resolve(id);
+        if (chrome.runtime.lastError) {
+          console.error('[SW] Download failed:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          console.log('[SW] Download started, id:', id);
+          resolve(id);
+        }
       });
     });
+    
+    // 记录期望的文件名用于下载完成后重命名
+    await trackDownload(downloadId, filename);
 
     return { success: true, successCount, failCount, downloadId };
 
