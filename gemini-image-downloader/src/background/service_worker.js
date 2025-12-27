@@ -143,7 +143,7 @@ async function handleBatchDownload(urls) {
       reader.readAsDataURL(zipBlob);
     });
 
-    const filename = `Gemini_Images_${successCount}.zip`;
+    const filename = 'Gemini image.zip';
     
     const downloadId = await new Promise((resolve, reject) => {
       chrome.downloads.download({

@@ -213,8 +213,8 @@
 }
 
 .gid-image-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -224,7 +224,7 @@
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-  aspect-ratio: 1;
+  aspect-ratio: 16/9;
   transition: all 0.2s;
   border: 2px solid transparent;
 }
@@ -303,20 +303,18 @@
   position: absolute;
   bottom: 8px;
   right: 8px;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 4px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   border: none;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   color: #3c4043;
-}
-
-.gid-image-item:hover .gid-btn-download {
-  display: flex;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
 .gid-btn-download:hover {
