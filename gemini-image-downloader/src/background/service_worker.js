@@ -1,85 +1,169 @@
-// [IN]: chrome.storage.session/local, chrome.downloads API, chrome.runtime messaging / Chrome 存储会话/本地、Chrome 下载 API、Chrome 运行时消息
-// [OUT]: Download tracking service, rename operations, message handlers / 下载跟踪服务、重命名操作、消息处理器
-// [POS]: src/background/service_worker.js - Background layer for lifecycle management / 用于生命周期管理的后台层
+// [IN]: chrome.storage, chrome.downloads, chrome.runtime / Chrome 存储、下载、运行时
+// [OUT]: Download service, ZIP generation / 下载服务、ZIP 生成
+// [POS]: src/background/service_worker.js
 // Protocol: When updating me, sync this header + parent folder's .folder.md
-// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
+
+try {
+  importScripts('../../libs/jszip.min.js');
+} catch (e) {
+  console.error('[SW] Failed to load JSZip:', e);
+}
 
 const PENDING_KEY = 'pendingDownloadRenames';
 const storage = chrome.storage.session || chrome.storage.local;
 
-function readPending() {
-  return new Promise((resolve) => {
-    storage.get(PENDING_KEY, (result) => {
-      resolve(result[PENDING_KEY] || {});
-    });
-  });
-}
-
-function writePending(map) {
-  return new Promise((resolve) => {
-    storage.set({ [PENDING_KEY]: map }, () => resolve());
-  });
-}
-
+/* Utility Functions */
 function getBasename(pathname) {
   if (!pathname) return '';
   return pathname.split(/[/\\]/).pop() || '';
 }
 
+function getExtension(url, contentType) {
+  if (contentType) {
+    const type = contentType.split(';')[0].trim().toLowerCase();
+    const map = {
+      'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+      'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg'
+    };
+    if (map[type]) return map[type];
+  }
+  if (url) {
+    try {
+      const match = new URL(url).pathname.match(/\.([a-z0-9]+)$/i);
+      if (match) return match[1].toLowerCase();
+    } catch (e) {}
+  }
+  return 'png';
+}
+
+/* Download Tracking & Renaming (from M1) */
 async function trackDownload(downloadId, filename) {
-  const pending = await readPending();
-  pending[String(downloadId)] = filename;
-  await writePending(pending);
+  const data = await new Promise(r => storage.get(PENDING_KEY, res => r(res[PENDING_KEY] || {})));
+  data[String(downloadId)] = filename;
+  await new Promise(r => storage.set({ [PENDING_KEY]: data }, r));
 }
 
-async function untrackDownload(downloadId) {
-  const pending = await readPending();
-  delete pending[String(downloadId)];
-  await writePending(pending);
-}
+async function handleDownloadChanged(delta) {
+  if (!delta || !delta.state || delta.state.current !== 'complete') return;
+  const data = await new Promise(r => storage.get(PENDING_KEY, res => r(res[PENDING_KEY] || {})));
+  const expected = data[String(delta.id)];
+  if (!expected) return;
 
-function renameIfNeeded(downloadId, expectedFilename) {
-  return new Promise((resolve) => {
-    chrome.downloads.search({ id: downloadId }, (items) => {
-      const item = items && items[0];
-      if (!item) {
-        resolve(false);
-        return;
-      }
-
-      const currentBase = getBasename(item.filename);
-      if (currentBase === expectedFilename) {
-        resolve(true);
-        return;
-      }
-
-      chrome.downloads.rename(downloadId, { filename: expectedFilename }, () => {
-        if (chrome.runtime.lastError) {
-          resolve(false);
-          return;
-        }
-        resolve(true);
+  chrome.downloads.search({ id: delta.id }, (items) => {
+    if (!items || !items[0]) return;
+    const currentBase = getBasename(items[0].filename);
+    if (currentBase !== expected) {
+      chrome.downloads.rename(delta.id, { filename: expected }, () => {
+        if (chrome.runtime.lastError) console.warn('[SW] Rename failed:', chrome.runtime.lastError);
       });
-    });
+    }
   });
+  
+  delete data[String(delta.id)];
+  storage.set({ [PENDING_KEY]: data });
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.action === 'trackDownload') {
-    trackDownload(message.downloadId, message.filename)
-      .then(() => sendResponse({ ok: true }))
-      .catch(() => sendResponse({ ok: false }));
+chrome.downloads.onChanged.addListener(handleDownloadChanged);
+
+/* Message Handling */
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'downloadSingle') {
+    handleSingleDownload(request.url).then(sendResponse);
+    return true;
+  }
+  if (request.action === 'downloadBatch') {
+    handleBatchDownload(request.urls).then(sendResponse);
     return true;
   }
   return false;
 });
 
-chrome.downloads.onChanged.addListener(async (delta) => {
-  if (!delta || !delta.state || delta.state.current !== 'complete') return;
-  const pending = await readPending();
-  const expected = pending[String(delta.id)];
-  if (!expected) return;
+/* Core Logic */
+async function handleSingleDownload(url) {
+  try {
+    const filename = 'Gemini_Image.png'; // 浏览器会自动处理后缀和重名 (1)
+    
+    // 我们先尝试 fetch 获取真实类型，或者直接下载
+    // 为了简单和稳健，这里直接交给 chrome.downloads
+    // 但为了确保文件名后缀正确，最好是先 HEAD 一下，或者让浏览器自己决定，然后我们 rename
+    // 这里简化处理：直接下载，让浏览器处理冲突
+    
+    const downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download({
+        url: url,
+        filename: filename, // 建议文件名
+        conflictAction: 'uniquify',
+        saveAs: false
+      }, (id) => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(id);
+      });
+    });
 
-  await renameIfNeeded(delta.id, expected);
-  await untrackDownload(delta.id);
-});
+    return { success: true, downloadId };
+  } catch (error) {
+    console.error('[SW] Single download failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function handleBatchDownload(urls) {
+  if (!urls || urls.length === 0) return { success: false, error: 'No URLs' };
+
+  try {
+    const zip = new JSZip();
+    let successCount = 0;
+    let failCount = 0;
+
+    const fetches = urls.map(async (url, index) => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Status ${response.status}`);
+        const blob = await response.blob();
+        const ext = getExtension(url, blob.type);
+        const filename = `image_${String(index + 1).padStart(2, '0')}.${ext}`;
+        zip.file(filename, blob);
+        successCount++;
+      } catch (e) {
+        console.error(`[SW] Failed to fetch ${url}:`, e);
+        failCount++;
+      }
+    });
+
+    await Promise.all(fetches);
+
+    if (successCount === 0) {
+      return { success: false, error: 'All downloads failed', failCount };
+    }
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const reader = new FileReader();
+    const base64Data = await new Promise((resolve) => {
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(zipBlob);
+    });
+
+    const filename = `Gemini_Images_${successCount}.zip`;
+    
+    const downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download({
+        url: base64Data,
+        filename: filename,
+        conflictAction: 'uniquify',
+        saveAs: false
+      }, (id) => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(id);
+      });
+    });
+
+    // 记录期望的文件名用于重命名（如果需要）
+    trackDownload(downloadId, filename);
+
+    return { success: true, successCount, failCount, downloadId };
+
+  } catch (error) {
+    console.error('[SW] Batch download failed:', error);
+    return { success: false, error: error.message };
+  }
+}

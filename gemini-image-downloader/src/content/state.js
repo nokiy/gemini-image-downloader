@@ -1,0 +1,191 @@
+// [IN]: Detection module / 检测模块
+// [OUT]: State management functions, event emitter / 状态管理函数、事件发射器
+// [POS]: src/content/state.js - State management layer / 状态管理层
+
+/**
+ * Gemini Image State Manager
+ * 管理图片列表、选择状态、下载队列和 UI 状态
+ */
+
+const state = {
+  // 检测到的图片列表
+  images: [],           // DetectedImage[]
+  
+  // 显示的图片（最多 10 张）
+  displayImages: [],    // DetectedImage[]
+  
+  // 选中的图片 URL 集合
+  selectedUrls: new Set(),
+  
+  // 下载队列状态
+  downloadQueue: {
+    tasks: [],          // 待下载任务
+    currentTask: null,  // 当前正在下载的任务
+    isProcessing: false // 是否正在处理
+  },
+  
+  // UI 状态
+  ui: {
+    isDrawerOpen: false,
+    isIconVisible: false,
+    downloadStatus: 'idle' // 'idle' | 'downloading' | 'completed' | 'error'
+  }
+};
+
+// 状态变化监听器
+const listeners = new Map();
+
+/**
+ * 更新图片列表
+ * @param {Array} newImages - 新检测到的图片列表
+ */
+function updateImages(newImages) {
+  state.images = newImages;
+  
+  // 只取前 10 张显示
+  state.displayImages = newImages.slice(0, 10);
+  
+  // 清理无效的选中状态
+  const validUrls = new Set(newImages.map(img => img.url));
+  state.selectedUrls = new Set(
+    [...state.selectedUrls].filter(url => validUrls.has(url))
+  );
+  
+  // 更新图标显示状态
+  state.ui.isIconVisible = newImages.length > 0;
+  
+  // 触发 UI 更新
+  emitStateChange('images');
+}
+
+/**
+ * 切换单个图片的选中状态
+ * @param {string} url - 图片 URL
+ */
+function toggleSelect(url) {
+  if (state.selectedUrls.has(url)) {
+    state.selectedUrls.delete(url);
+  } else {
+    state.selectedUrls.add(url);
+  }
+  emitStateChange('selection');
+}
+
+/**
+ * 全选/取消全选
+ * @param {boolean} select - true 为全选，false 为取消全选
+ */
+function selectAll(select = true) {
+  if (select) {
+    state.displayImages.forEach(img => {
+      state.selectedUrls.add(img.url);
+    });
+  } else {
+    state.selectedUrls.clear();
+  }
+  emitStateChange('selection');
+}
+
+/**
+ * 获取选中的图片
+ * @returns {Array} 选中的图片列表
+ */
+function getSelectedImages() {
+  return state.displayImages.filter(img => 
+    state.selectedUrls.has(img.url)
+  );
+}
+
+/**
+ * 更新下载状态
+ * @param {string} status - 'idle' | 'downloading' | 'completed' | 'error'
+ */
+function setDownloadStatus(status) {
+  state.ui.downloadStatus = status;
+  emitStateChange('downloadStatus');
+}
+
+/**
+ * 更新抽屉状态
+ * @param {boolean} isOpen - 是否打开
+ */
+function setDrawerOpen(isOpen) {
+  state.ui.isDrawerOpen = isOpen;
+  emitStateChange('drawer');
+}
+
+/**
+ * 清空所有状态（切换对话时调用）
+ */
+function clearState() {
+  state.images = [];
+  state.displayImages = [];
+  state.selectedUrls.clear();
+  state.ui.isIconVisible = false;
+  state.ui.isDrawerOpen = false;
+  state.ui.downloadStatus = 'idle';
+  emitStateChange('clear');
+}
+
+/**
+ * 监听状态变化
+ * @param {string} key - 状态键
+ * @param {Function} callback - 回调函数
+ */
+function onStateChange(key, callback) {
+  if (!listeners.has(key)) {
+    listeners.set(key, []);
+  }
+  listeners.get(key).push(callback);
+}
+
+/**
+ * 移除状态监听
+ * @param {string} key - 状态键
+ * @param {Function} callback - 回调函数
+ */
+function offStateChange(key, callback) {
+  if (listeners.has(key)) {
+    const callbacks = listeners.get(key);
+    const index = callbacks.indexOf(callback);
+    if (index > -1) {
+      callbacks.splice(index, 1);
+    }
+  }
+}
+
+/**
+ * 触发状态变化事件
+ * @param {string} key - 状态键
+ */
+function emitStateChange(key) {
+  const callbacks = listeners.get(key) || [];
+  callbacks.forEach(cb => cb(state));
+  
+  // 同时触发通用监听器
+  const allCallbacks = listeners.get('*') || [];
+  allCallbacks.forEach(cb => cb(state, key));
+}
+
+/**
+ * 获取当前状态
+ * @returns {Object} 当前状态
+ */
+function getState() {
+  return state;
+}
+
+// 导出到全局
+window.GeminiImageState = {
+  getState,
+  updateImages,
+  toggleSelect,
+  selectAll,
+  getSelectedImages,
+  setDownloadStatus,
+  setDrawerOpen,
+  clearState,
+  onStateChange,
+  offStateChange
+};
+

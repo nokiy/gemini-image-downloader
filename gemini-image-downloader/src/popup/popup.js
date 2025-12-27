@@ -1,5 +1,5 @@
 // [IN]: Chrome tabs/scripting/downloads APIs, JSZip library, DOM APIs / Chrome 标签页/脚本/下载 API、JSZip 库、DOM API
-// [OUT]: User interface, download orchestration, ZIP file generation / 用户界面、下载编排、ZIP 文件生成
+// [OUT]: UI flow, content script injection fallback, ZIP file generation / UI 流程、内容脚本注入兜底、ZIP 文件生成
 // [POS]: src/popup/popup.js - UI orchestration layer for user interaction / 用于用户交互的 UI 编排层
 // Protocol: When updating me, sync this header + parent folder's .folder.md
 // 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
@@ -410,7 +410,7 @@ function injectContentScript(tabId) {
     return new Promise((resolve) => {
         chrome.scripting.executeScript({
             target: { tabId },
-            files: ['content/content.js']
+            files: ['src/content/content.js']
         }, () => {
             if (chrome.runtime.lastError) {
                 console.warn('[Popup] Inject error:', chrome.runtime.lastError);
