@@ -8,6 +8,58 @@
  */
 
 /**
+ * 获取图片的原始高清URL
+ * Google图片服务URL参数说明：
+ * - =s0: 原始尺寸（最高质量）
+ * - =sXXXX: 指定最大边长
+ * - =wXXXX-hXXXX: 指定宽高
+ * 我们需要移除或替换这些参数以获取原图
+ */
+function getOriginalImageUrl(url) {
+  if (!url || !url.includes('googleusercontent.com')) {
+    return url;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    
+    // 移除所有尺寸限制参数，或替换为 =s0（原图）
+    // 常见的参数模式：=s1024, =w800-h600, =s0-d 等
+    let path = urlObj.pathname;
+    
+    // 如果路径中有尺寸参数（如 =s512），替换为 =s0
+    if (path.match(/=s\d+/)) {
+      path = path.replace(/=s\d+/, '=s0');
+    } else if (path.match(/=w\d+-h\d+/)) {
+      // 如果有宽高参数，移除它们
+      path = path.replace(/=w\d+-h\d+/, '=s0');
+    } else if (!path.includes('=s')) {
+      // 如果没有任何尺寸参数，添加 =s0
+      path = path + '=s0';
+    }
+    
+    urlObj.pathname = path;
+    
+    // 移除可能的质量降低参数
+    urlObj.searchParams.delete('sz'); // size
+    urlObj.searchParams.delete('w');  // width
+    urlObj.searchParams.delete('h');  // height
+    
+    const finalUrl = urlObj.toString();
+    console.log('[GID] URL optimization:', {
+      original: url,
+      optimized: finalUrl,
+      changed: url !== finalUrl
+    });
+    
+    return finalUrl;
+  } catch (e) {
+    console.error('[GID] Failed to parse URL:', e);
+    return url;
+  }
+}
+
+/**
  * 方法 1：DOM 选择器检测（优先）
  * 查找 Gemini 原生的下载按钮元素来定位图片
  */
@@ -25,7 +77,7 @@ function findImagesByDOM() {
       const img = container.querySelector('img.image');
       if (img && img.src && img.src.includes('googleusercontent.com')) {
         images.push({
-          url: img.src,
+          url: getOriginalImageUrl(img.src), // 使用优化后的高清URL
           element: img,
           container: container,
           method: 'dom'
@@ -60,7 +112,7 @@ function findImagesByURL() {
 
     if (isGenerated && !isAvatar && !isIcon) {
       images.push({
-        url: url,
+        url: getOriginalImageUrl(url), // 使用优化后的高清URL
         element: img,
         container: img.parentElement,
         method: 'url'
@@ -128,6 +180,7 @@ window.GeminiImageDetection = {
   detectImages,
   setupObserver,
   findImagesByDOM,
-  findImagesByURL
+  findImagesByURL,
+  getOriginalImageUrl // 导出URL优化函数供调试使用
 };
 
