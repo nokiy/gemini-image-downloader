@@ -7,12 +7,17 @@
  * 管理图片列表、选择状态、下载队列和 UI 状态
  */
 
+const INITIAL_DISPLAY_COUNT = 10; // 初始显示数量
+
 const state = {
   // 检测到的图片列表
   images: [],           // DetectedImage[]
   
-  // 显示的图片（最多 10 张）
+  // 显示的图片（初始最多 10 张，展开后显示全部）
   displayImages: [],    // DetectedImage[]
+  
+  // 是否已展开显示更多
+  isExpanded: false,
   
   // 选中的图片 URL 集合
   selectedUrls: new Set(),
@@ -42,8 +47,12 @@ const listeners = new Map();
 function updateImages(newImages) {
   state.images = newImages;
   
-  // 只取前 10 张显示
-  state.displayImages = newImages.slice(0, 10);
+  // 根据展开状态决定显示数量
+  if (state.isExpanded) {
+    state.displayImages = newImages;
+  } else {
+    state.displayImages = newImages.slice(0, INITIAL_DISPLAY_COUNT);
+  }
   
   // 清理无效的选中状态
   const validUrls = new Set(newImages.map(img => img.url));
@@ -56,6 +65,44 @@ function updateImages(newImages) {
   
   // 触发 UI 更新
   emitStateChange('images');
+}
+
+/**
+ * 展开显示更多图片
+ */
+function expandImages() {
+  if (state.isExpanded) return;
+  
+  state.isExpanded = true;
+  state.displayImages = state.images;
+  emitStateChange('expand');
+}
+
+/**
+ * 收起图片列表
+ */
+function collapseImages() {
+  if (!state.isExpanded) return;
+  
+  state.isExpanded = false;
+  state.displayImages = state.images.slice(0, INITIAL_DISPLAY_COUNT);
+  emitStateChange('collapse');
+}
+
+/**
+ * 检查是否有更多图片
+ * @returns {boolean}
+ */
+function hasMoreImages() {
+  return state.images.length > INITIAL_DISPLAY_COUNT;
+}
+
+/**
+ * 获取剩余图片数量
+ * @returns {number}
+ */
+function getRemainingCount() {
+  return Math.max(0, state.images.length - INITIAL_DISPLAY_COUNT);
 }
 
 /**
@@ -120,6 +167,7 @@ function setDrawerOpen(isOpen) {
 function clearState() {
   state.images = [];
   state.displayImages = [];
+  state.isExpanded = false;
   state.selectedUrls.clear();
   state.ui.isIconVisible = false;
   state.ui.isDrawerOpen = false;
@@ -186,6 +234,10 @@ window.GeminiImageState = {
   setDrawerOpen,
   clearState,
   onStateChange,
-  offStateChange
+  offStateChange,
+  expandImages,
+  collapseImages,
+  hasMoreImages,
+  getRemainingCount
 };
 

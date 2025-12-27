@@ -245,53 +245,11 @@
   background: #f0f0f0;
 }
 
-.gid-image-thumb img {
+/* 缩略图图片样式（直接加载，无懒加载） */
+.gid-image-thumb img.gid-thumb-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.3s ease-in-out;
-}
-
-.gid-image-thumb img.gid-image-loaded {
-  opacity: 1;
-}
-
-.gid-image-thumb img.gid-image-loading {
-  opacity: 0.5;
-}
-
-.gid-image-thumb img.gid-image-error {
-  opacity: 0.3;
-}
-
-/* 懒加载占位符 */
-.gid-image-placeholder {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
-  color: #999;
-  font-size: 12px;
-  z-index: 1;
-}
-
-.gid-placeholder-spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid #e0e0e0;
-  border-top-color: #1a73e8;
-  border-radius: 50%;
-  animation: gid-spin 0.8s linear infinite;
-}
-
-@keyframes gid-spin {
-  to { transform: rotate(360deg); }
 }
 
 .gid-image-checkbox {
@@ -446,4 +404,42 @@
 .gid-toast-warning {
   background: #f9ab00;
   color: #202124;
+}
+
+/* ==================== "More" 按钮 ==================== */
+.gid-more-button-container {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+}
+
+.gid-btn-more,
+.gid-btn-collapse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 20px;
+  font-size: 14px;
+  color: #1a73e8;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.gid-btn-more:hover,
+.gid-btn-collapse:hover {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.gid-more-count {
+  font-size: 12px;
+  color: #5f6368;
+  background: #f1f3f4;
+  padding: 2px 8px;
+  border-radius: 10px;
 }

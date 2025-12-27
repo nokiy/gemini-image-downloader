@@ -10,7 +10,7 @@
   }
   window.__geminiImageDownloaderInjected = true;
 
-  console.log('[GID] Initializing v1.1.0.11...');
+  console.log('[GID] Initializing v1.1.0.13...');
 
   // 1. 初始化 UI
   if (window.GeminiImageUI && window.GeminiImageUI.initUI) {

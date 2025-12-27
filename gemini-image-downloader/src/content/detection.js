@@ -8,7 +8,7 @@
  */
 
 /**
- * 获取图片的原始高清URL
+ * 获取图片的原始高清URL（用于下载）
  * Google图片服务URL参数说明：
  * - =s0: 原始尺寸（最高质量）
  * - =sXXXX: 指定最大边长
@@ -24,35 +24,25 @@ function getOriginalImageUrl(url) {
     const urlObj = new URL(url);
     
     // 移除所有尺寸限制参数，或替换为 =s0（原图）
-    // 常见的参数模式：=s1024, =w800-h600, =s0-d 等
     let path = urlObj.pathname;
     
     // 如果路径中有尺寸参数（如 =s512），替换为 =s0
     if (path.match(/=s\d+/)) {
       path = path.replace(/=s\d+/, '=s0');
     } else if (path.match(/=w\d+-h\d+/)) {
-      // 如果有宽高参数，移除它们
       path = path.replace(/=w\d+-h\d+/, '=s0');
     } else if (!path.includes('=s')) {
-      // 如果没有任何尺寸参数，添加 =s0
       path = path + '=s0';
     }
     
     urlObj.pathname = path;
     
     // 移除可能的质量降低参数
-    urlObj.searchParams.delete('sz'); // size
-    urlObj.searchParams.delete('w');  // width
-    urlObj.searchParams.delete('h');  // height
+    urlObj.searchParams.delete('sz');
+    urlObj.searchParams.delete('w');
+    urlObj.searchParams.delete('h');
     
-    const finalUrl = urlObj.toString();
-    console.log('[GID] URL optimization:', {
-      original: url,
-      optimized: finalUrl,
-      changed: url !== finalUrl
-    });
-    
-    return finalUrl;
+    return urlObj.toString();
   } catch (e) {
     console.error('[GID] Failed to parse URL:', e);
     if (window.GeminiImageErrorLogger) {
@@ -61,6 +51,35 @@ function getOriginalImageUrl(url) {
         url
       });
     }
+    return url;
+  }
+}
+
+/**
+ * 获取缩略图URL（用于快速预览，低分辨率）
+ * 使用 =s400 获取400px的缩略图，加载更快
+ */
+function getThumbnailUrl(url) {
+  if (!url || !url.includes('googleusercontent.com')) {
+    return url;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    let path = urlObj.pathname;
+    
+    // 替换为 =s400（400px 缩略图，足够预览）
+    if (path.match(/=s\d+/)) {
+      path = path.replace(/=s\d+/, '=s400');
+    } else if (path.match(/=w\d+-h\d+/)) {
+      path = path.replace(/=w\d+-h\d+/, '=s400');
+    } else if (!path.includes('=s')) {
+      path = path + '=s400';
+    }
+    
+    urlObj.pathname = path;
+    return urlObj.toString();
+  } catch (e) {
     return url;
   }
 }
@@ -83,7 +102,8 @@ function findImagesByDOM() {
       const img = container.querySelector('img.image');
       if (img && img.src && img.src.includes('googleusercontent.com')) {
         images.push({
-          url: getOriginalImageUrl(img.src), // 使用优化后的高清URL
+          url: getOriginalImageUrl(img.src),      // 原图URL（下载用）
+          thumbnailUrl: getThumbnailUrl(img.src), // 缩略图URL（预览用，加载更快）
           element: img,
           container: container,
           method: 'dom'
@@ -118,7 +138,8 @@ function findImagesByURL() {
 
     if (isGenerated && !isAvatar && !isIcon) {
       images.push({
-        url: getOriginalImageUrl(url), // 使用优化后的高清URL
+        url: getOriginalImageUrl(url),      // 原图URL（下载用）
+        thumbnailUrl: getThumbnailUrl(url), // 缩略图URL（预览用，加载更快）
         element: img,
         container: img.parentElement,
         method: 'url'
