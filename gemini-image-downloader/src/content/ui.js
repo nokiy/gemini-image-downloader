@@ -11,9 +11,13 @@ const ICON_ID = 'gemini-downloader-icon';
 const DRAWER_ID = 'gemini-downloader-drawer';
 const OVERLAY_ID = 'gemini-downloader-overlay';
 
-// 简单的任务队列
-const taskQueue = [];
-let isProcessingQueue = false;
+// 任务队列：最多 2 个任务（1 个批量 + 1 个单个）
+const downloadQueue = {
+  batchTask: null,      // 当前批量任务
+  singleTask: null,     // 当前单个任务
+  isBatchRunning: false,
+  isSingleRunning: false
+};
 
 // 获取状态管理器
 function getStateManager() {
@@ -21,39 +25,83 @@ function getStateManager() {
 }
 
 /**
- * 队列处理函数
+ * 添加批量下载任务
+ * @returns {boolean} 是否成功添加
  */
-async function processQueue() {
-  if (isProcessingQueue) return;
-  if (taskQueue.length === 0) return;
+function addBatchTask(taskFn) {
+  if (downloadQueue.batchTask || downloadQueue.isBatchRunning) {
+    showToast('已有批量下载任务在进行中', 'warning');
+    return false;
+  }
+  downloadQueue.batchTask = taskFn;
+  processBatchQueue();
+  return true;
+}
 
-  isProcessingQueue = true;
+/**
+ * 添加单个下载任务
+ * @returns {boolean} 是否成功添加
+ */
+function addSingleTask(taskFn) {
+  if (downloadQueue.singleTask || downloadQueue.isSingleRunning) {
+    showToast('已有单个下载任务在进行中', 'warning');
+    return false;
+  }
+  downloadQueue.singleTask = taskFn;
+  processSingleQueue();
+  return true;
+}
+
+/**
+ * 处理批量任务队列
+ */
+async function processBatchQueue() {
+  if (downloadQueue.isBatchRunning || !downloadQueue.batchTask) return;
+
+  downloadQueue.isBatchRunning = true;
   const stateManager = getStateManager();
   
   try {
-    const task = taskQueue.shift(); // FIFO
+    const task = downloadQueue.batchTask;
+    downloadQueue.batchTask = null;
     
     if (stateManager) stateManager.setDownloadStatus('downloading');
-    
-    // 执行任务
     await task();
     
   } catch (error) {
-    console.error('[GID] Queue task error:', error);
+    console.error('[GID] Batch task error:', error);
   } finally {
-    isProcessingQueue = false;
-    if (stateManager) stateManager.setDownloadStatus('idle');
-    // 处理下一个
-    processQueue();
+    downloadQueue.isBatchRunning = false;
+    if (stateManager && !downloadQueue.isSingleRunning) {
+      stateManager.setDownloadStatus('idle');
+    }
   }
 }
 
 /**
- * 添加任务到队列
+ * 处理单个任务队列
  */
-function addToQueue(taskFn) {
-  taskQueue.push(taskFn);
-  processQueue();
+async function processSingleQueue() {
+  if (downloadQueue.isSingleRunning || !downloadQueue.singleTask) return;
+
+  downloadQueue.isSingleRunning = true;
+  const stateManager = getStateManager();
+  
+  try {
+    const task = downloadQueue.singleTask;
+    downloadQueue.singleTask = null;
+    
+    if (stateManager) stateManager.setDownloadStatus('downloading');
+    await task();
+    
+  } catch (error) {
+    console.error('[GID] Single task error:', error);
+  } finally {
+    downloadQueue.isSingleRunning = false;
+    if (stateManager && !downloadQueue.isBatchRunning) {
+      stateManager.setDownloadStatus('idle');
+    }
+  }
 }
 
 /**
@@ -252,15 +300,16 @@ function createDrawer() {
     <div class="gid-drawer-header">
       <div class="gid-drawer-title">
         <span class="gid-title-text">Gemini Images</span>
-        <span class="gid-drawer-count">0 张图片</span>
+        <button class="gid-btn-close" aria-label="关闭">×</button>
       </div>
       <div class="gid-drawer-actions">
+        <span class="gid-drawer-count">0 张图片</span>
         <button class="gid-btn gid-btn-select-all">全选</button>
         <button class="gid-btn gid-btn-primary gid-btn-batch" disabled>
           批量下载
         </button>
-        <button class="gid-btn-close" aria-label="关闭">×</button>
       </div>
+      <div class="gid-status-bar"></div>
     </div>
     <div class="gid-drawer-body">
       <div class="gid-image-list"></div>
@@ -268,9 +317,6 @@ function createDrawer() {
         <div class="gid-empty-icon">📷</div>
         <div class="gid-empty-text">未检测到图片</div>
       </div>
-    </div>
-    <div class="gid-drawer-footer">
-      <div class="gid-status-bar"></div>
     </div>
   `;
 
@@ -480,22 +526,25 @@ function handleSelectAll() {
  * 处理单个下载 (加入队列)
  */
 function handleSingleDownload(url) {
-  addToQueue(async () => {
-    showToast('下载开始...');
+  const added = addSingleTask(async () => {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'downloadSingle',
         url: url
       }, (response) => {
         if (response && response.success) {
-          showToast('下载任务已提交');
+          showToast('下载完成');
         } else {
-          showToast('下载失败，请重试', 'error');
+          showToast('下载失败', 'error');
         }
-        resolve(); // 任务完成
+        resolve();
       });
     });
   });
+  
+  if (added) {
+    showToast('下载中...');
+  }
 }
 
 /**
@@ -511,10 +560,7 @@ function handleBatchDownload() {
     return;
   }
 
-  // 立即显示初始状态
-  updateStatusBar(`Preparing ${selectedImages.length} images...`, 'downloading');
-
-  addToQueue(async () => {
+  const added = addBatchTask(async () => {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'downloadBatch',
@@ -525,6 +571,10 @@ function handleBatchDownload() {
       });
     });
   });
+
+  if (added) {
+    updateStatusBar(`Preparing ${selectedImages.length} images...`, 'downloading');
+  }
 }
 
 /**
