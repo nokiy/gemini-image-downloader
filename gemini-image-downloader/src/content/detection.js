@@ -55,6 +55,12 @@ function getOriginalImageUrl(url) {
     return finalUrl;
   } catch (e) {
     console.error('[GID] Failed to parse URL:', e);
+    if (window.GeminiImageErrorLogger) {
+      window.GeminiImageErrorLogger.logDetectionError(e, {
+        context: 'getOriginalImageUrl',
+        url
+      });
+    }
     return url;
   }
 }
@@ -128,23 +134,33 @@ function findImagesByURL() {
  * @returns {Array<DetectedImage>} 检测到的图片列表（已去重）
  */
 function detectImages() {
-  // 优先使用 DOM 选择器
-  let images = findImagesByDOM();
+  try {
+    // 优先使用 DOM 选择器
+    let images = findImagesByDOM();
 
-  // 如果 DOM 选择器无结果，回退到 URL 模式
-  if (images.length === 0) {
-    images = findImagesByURL();
+    // 如果 DOM 选择器无结果，回退到 URL 模式
+    if (images.length === 0) {
+      images = findImagesByURL();
+    }
+
+    // 去重（基于 URL）
+    const uniqueUrls = new Set();
+    const uniqueImages = images.filter(img => {
+      if (uniqueUrls.has(img.url)) return false;
+      uniqueUrls.add(img.url);
+      return true;
+    });
+
+    return uniqueImages;
+  } catch (error) {
+    console.error('[GID] Error in detectImages:', error);
+    if (window.GeminiImageErrorLogger) {
+      window.GeminiImageErrorLogger.logDetectionError(error, {
+        context: 'detectImages'
+      });
+    }
+    return [];
   }
-
-  // 去重（基于 URL）
-  const uniqueUrls = new Set();
-  const uniqueImages = images.filter(img => {
-    if (uniqueUrls.has(img.url)) return false;
-    uniqueUrls.add(img.url);
-    return true;
-  });
-
-  return uniqueImages;
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Gemini Image Downloader",
-  "version": "1.1.0.8",
+  "version": "1.1.0.9",
   "description": "一键批量下载 Gemini AI 生成的所有高清图片",
   "permissions": [
     "activeTab",
@@ -31,6 +31,7 @@
         "https://gemini.google.com/*"
       ],
       "js": [
+        "src/content/error-logger.js",
         "src/content/state.js",
         "src/content/detection.js",
         "src/content/ui.js",

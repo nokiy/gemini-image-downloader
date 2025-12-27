@@ -342,7 +342,80 @@ function createDrawer() {
 }
 
 /**
- * 渲染图片列表
+ * Intersection Observer for lazy loading images
+ */
+let imageObserver = null;
+
+/**
+ * 初始化图片懒加载观察器
+ */
+function initImageObserver() {
+  if (imageObserver) {
+    return imageObserver;
+  }
+
+  if (!('IntersectionObserver' in window)) {
+    console.warn('[GID] IntersectionObserver not supported, fallback to eager loading');
+    return null;
+  }
+
+  imageObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const img = entry.target;
+        const dataSrc = img.getAttribute('data-src');
+        
+        if (dataSrc && !img.src) {
+          // 加载图片
+          img.src = dataSrc;
+          img.removeAttribute('data-src');
+          img.classList.add('gid-image-loading');
+          
+          // 加载成功
+          img.addEventListener('load', () => {
+            img.classList.remove('gid-image-loading');
+            img.classList.add('gid-image-loaded');
+            const placeholder = img.parentElement.querySelector('.gid-image-placeholder');
+            if (placeholder) {
+              placeholder.style.display = 'none';
+            }
+          }, { once: true });
+          
+          // 加载失败
+          img.addEventListener('error', () => {
+            img.classList.remove('gid-image-loading');
+            img.classList.add('gid-image-error');
+            const placeholder = img.parentElement.querySelector('.gid-image-placeholder');
+            if (placeholder) {
+              placeholder.innerHTML = '⚠️ 加载失败';
+              placeholder.style.display = 'flex';
+            }
+            
+            // 记录错误日志
+            if (window.GeminiImageErrorLogger) {
+              window.GeminiImageErrorLogger.logNetworkError(
+                new Error(`Failed to load image: ${dataSrc}`),
+                { url: dataSrc, type: 'thumbnail-load' }
+              );
+            }
+          }, { once: true });
+        }
+        
+        // 停止观察已加载的图片
+        imageObserver.unobserve(img);
+      }
+    });
+  }, {
+    root: null,
+    rootMargin: '50px', // 提前50px开始加载
+    threshold: 0.01
+  });
+
+  return imageObserver;
+}
+
+/**
+ * 渲染图片列表（支持懒加载）
  */
 function renderImageList(state) {
   const listContainer = document.querySelector('.gid-image-list');
@@ -357,67 +430,97 @@ function renderImageList(state) {
     if (emptyState) emptyState.style.display = 'flex';
     return;
   } else {
-    listContainer.style.display = 'grid';
+    listContainer.style.display = 'flex';
     if (emptyState) emptyState.style.display = 'none';
   }
 
-  // 使用 DocumentFragment 优化渲染，避免 innerHTML 带来的风险
-  // 这里为了保持原有逻辑简单，仍然使用 innerHTML，但在 M3 中应考虑安全性
-  // 为了符合 M3 规范，我们至少应该对 URL 进行编码或验证，但在 content script 中 context 相对可控
-  
-  listContainer.innerHTML = displayImages.map((img, index) => `
-    <div class="gid-image-item ${selectedUrls.has(img.url) ? 'selected' : ''}" data-url="${img.url}">
-      <div class="gid-image-checkbox">
-        <input type="checkbox" ${selectedUrls.has(img.url) ? 'checked' : ''}>
-        <span class="gid-checkbox-mark"></span>
-      </div>
-      <div class="gid-image-thumb">
-        <img src="${img.url}" alt="Image ${index + 1}" loading="lazy">
-      </div>
-      <div class="gid-image-info">
-        <span class="gid-image-index">#${index + 1}</span>
-      </div>
-      <button class="gid-btn gid-btn-download" data-url="${img.url}" title="下载">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path d="M12 15V3M12 15L7 10M12 15L17 10M3 15V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-    </div>
-  `).join('');
+  try {
+    // 使用懒加载：初始不设置src，使用data-src
+    listContainer.innerHTML = displayImages.map((img, index) => {
+      // 转义URL以防止XSS
+      const safeUrl = img.url.replace(/"/g, '&quot;');
+      return `
+        <div class="gid-image-item ${selectedUrls.has(img.url) ? 'selected' : ''}" data-url="${safeUrl}">
+          <div class="gid-image-checkbox">
+            <input type="checkbox" ${selectedUrls.has(img.url) ? 'checked' : ''}>
+            <span class="gid-checkbox-mark"></span>
+          </div>
+          <div class="gid-image-thumb">
+            <div class="gid-image-placeholder">
+              <div class="gid-placeholder-spinner"></div>
+            </div>
+            <img data-src="${safeUrl}" alt="Image ${index + 1}" class="gid-lazy-image">
+          </div>
+          <div class="gid-image-info">
+            <span class="gid-image-index">#${index + 1}</span>
+          </div>
+          <button class="gid-btn gid-btn-download" data-url="${safeUrl}" title="下载">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 15V3M12 15L7 10M12 15L17 10M3 15V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      `;
+    }).join('');
 
-  // 绑定事件
-  listContainer.querySelectorAll('.gid-image-item').forEach(item => {
-    const url = item.dataset.url;
+    // 初始化观察器
+    const observer = initImageObserver();
+    
+    // 绑定事件并开始观察
+    listContainer.querySelectorAll('.gid-image-item').forEach((item, index) => {
+      const url = item.dataset.url;
+      const img = item.querySelector('.gid-lazy-image');
 
-    // 复选框点击
-    const checkbox = item.querySelector('.gid-image-checkbox');
-    checkbox.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const stateManager = getStateManager();
-      if (stateManager) {
-        stateManager.toggleSelect(url);
+      // 开始观察图片（懒加载）
+      if (observer && img) {
+        observer.observe(img);
+      } else if (img) {
+        // 如果不支持IntersectionObserver，直接加载
+        const dataSrc = img.getAttribute('data-src');
+        if (dataSrc) {
+          img.src = dataSrc;
+          img.removeAttribute('data-src');
+        }
       }
+
+      // 复选框点击
+      const checkbox = item.querySelector('.gid-image-checkbox');
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const stateManager = getStateManager();
+        if (stateManager) {
+          stateManager.toggleSelect(url);
+        }
+      });
+
+      // 单个下载
+      const downloadBtn = item.querySelector('.gid-btn-download');
+      downloadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleSingleDownload(url);
+      });
+
+      // 点击整个 item 切换选中
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.gid-btn-download')) return;
+        const stateManager = getStateManager();
+        if (stateManager) {
+          stateManager.toggleSelect(url);
+        }
+      });
     });
 
-    // 单个下载
-    const downloadBtn = item.querySelector('.gid-btn-download');
-    downloadBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleSingleDownload(url);
-    });
-
-    // 点击整个 item 切换选中
-    item.addEventListener('click', (e) => {
-      if (e.target.closest('.gid-btn-download')) return;
-      const stateManager = getStateManager();
-      if (stateManager) {
-        stateManager.toggleSelect(url);
-      }
-    });
-  });
-
-  // 更新头部信息
-  updateHeaderInfo(state);
+    // 更新头部信息
+    updateHeaderInfo(state);
+  } catch (error) {
+    console.error('[GID] Error rendering image list:', error);
+    if (window.GeminiImageErrorLogger) {
+      window.GeminiImageErrorLogger.logUIError(error, {
+        context: 'renderImageList',
+        imageCount: displayImages.length
+      });
+    }
+  }
 }
 
 /**
@@ -532,9 +635,27 @@ function handleSingleDownload(url) {
         action: 'downloadSingle',
         url: url
       }, (response) => {
-        if (response && response.success) {
+        if (chrome.runtime.lastError) {
+          const error = new Error(chrome.runtime.lastError.message);
+          if (window.GeminiImageErrorLogger) {
+            window.GeminiImageErrorLogger.logDownloadError(error, {
+              url,
+              type: 'single-download',
+              error: chrome.runtime.lastError.message
+            });
+          }
+          showToast('下载失败', 'error');
+        } else if (response && response.success) {
           showToast('下载完成');
         } else {
+          const error = new Error(response?.error || 'Unknown download error');
+          if (window.GeminiImageErrorLogger) {
+            window.GeminiImageErrorLogger.logDownloadError(error, {
+              url,
+              type: 'single-download',
+              response
+            });
+          }
           showToast('下载失败', 'error');
         }
         resolve();
@@ -569,7 +690,20 @@ function handleBatchDownload() {
         action: 'downloadBatch',
         urls: urls
       }, (response) => {
-        console.log('[GID] Batch download response:', response);
+        if (chrome.runtime.lastError) {
+          const error = new Error(chrome.runtime.lastError.message);
+          if (window.GeminiImageErrorLogger) {
+            window.GeminiImageErrorLogger.logDownloadError(error, {
+              urls,
+              count: urls.length,
+              type: 'batch-download',
+              error: chrome.runtime.lastError.message
+            });
+          }
+          updateStatusBar('批量下载失败', 'error');
+        } else {
+          console.log('[GID] Batch download response:', response);
+        }
         resolve();
       });
     });
