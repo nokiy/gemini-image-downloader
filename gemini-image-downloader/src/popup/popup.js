@@ -1,5 +1,5 @@
 // [IN]: Chrome tabs/scripting/downloads APIs, JSZip library, DOM APIs / Chrome 标签页/脚本/下载 API、JSZip 库、DOM API
-// [OUT]: UI flow, content script injection fallback, ZIP file generation / UI 流程、内容脚本注入兜底、ZIP 文件生成
+// [OUT]: UI flow, full content injection fallback (JS/CSS), ZIP file generation / UI 流程、完整内容注入兜底（JS/CSS）、ZIP 文件生成
 // [POS]: src/popup/popup.js - UI orchestration layer for user interaction / 用于用户交互的 UI 编排层
 // Protocol: When updating me, sync this header + parent folder's .folder.md
 // 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
@@ -30,6 +30,16 @@ const AUTO_POLL_MAX_SECONDS = Math.floor(AUTO_POLL_MAX_MS / 1000);
 const RENAME_RETRY_DELAY_MS = 600;
 const MAX_RENAME_ATTEMPTS = 4;
 const DOWNLOAD_FILENAME = 'Gemini_image.zip';
+const CONTENT_SCRIPT_FILES = [
+    'src/config/selectors.js',
+    'src/content/error-logger.js',
+    'src/utils/logger.js',
+    'src/content/state.js',
+    'src/content/detection.js',
+    'src/content/ui.js',
+    'src/content/content.js'
+];
+const CONTENT_STYLE_FILES = ['src/content/ui.css'];
 const MIME_EXTENSION_MAP = {
     'image/jpeg': 'jpg',
     'image/jpg': 'jpg',
@@ -402,15 +412,29 @@ async function ensureContentScript(tabId) {
     return { ready: false, error: createError('no_receiver', 'not ready') };
 }
 
-function injectContentScript(tabId) {
+async function injectContentScript(tabId) {
     if (!chrome.scripting?.executeScript) {
-        return Promise.resolve(false);
+        return false;
+    }
+
+    if (chrome.scripting.insertCSS) {
+        await new Promise((resolve) => {
+            chrome.scripting.insertCSS({
+                target: { tabId },
+                files: CONTENT_STYLE_FILES
+            }, () => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[Popup] CSS inject error:', chrome.runtime.lastError);
+                }
+                resolve();
+            });
+        });
     }
 
     return new Promise((resolve) => {
         chrome.scripting.executeScript({
             target: { tabId },
-            files: ['src/content/content.js']
+            files: CONTENT_SCRIPT_FILES
         }, () => {
             if (chrome.runtime.lastError) {
                 console.warn('[Popup] Inject error:', chrome.runtime.lastError);
