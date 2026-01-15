@@ -69,11 +69,14 @@ function getStateManager() {
  * @returns {boolean} 是否成功添加
  */
 function addBatchTask(taskFn) {
+  console.log('[GID] addBatchTask called, batchTask:', !!downloadQueue.batchTask, 'isBatchRunning:', downloadQueue.isBatchRunning);
   if (downloadQueue.batchTask || downloadQueue.isBatchRunning) {
+    console.log('[GID] Task already running');
     showToast('已有批量下载任务在进行中', 'warning');
     return false;
   }
   downloadQueue.batchTask = taskFn;
+  console.log('[GID] Task added, calling processBatchQueue');
   processBatchQueue();
   return true;
 }
@@ -96,19 +99,26 @@ function addSingleTask(taskFn) {
  * 处理批量任务队列
  */
 async function processBatchQueue() {
-  if (downloadQueue.isBatchRunning || !downloadQueue.batchTask) return;
+  console.log('[GID] processBatchQueue called, isBatchRunning:', downloadQueue.isBatchRunning, 'batchTask:', !!downloadQueue.batchTask);
+  if (downloadQueue.isBatchRunning || !downloadQueue.batchTask) {
+    console.log('[GID] processBatchQueue returning early');
+    return;
+  }
 
   downloadQueue.isBatchRunning = true;
   const stateManager = getStateManager();
-  
+
   try {
     const task = downloadQueue.batchTask;
     downloadQueue.batchTask = null;
-    
+
+    console.log('[GID] Executing batch task...');
     if (stateManager) stateManager.setDownloadStatus('downloading');
     await task();
-    
+    console.log('[GID] Batch task completed');
+
   } catch (error) {
+    console.error('[GID] Batch task error:', error);
     getLogger().error('UI', error, { context: 'processBatchQueue' });
   } finally {
     downloadQueue.isBatchRunning = false;
@@ -680,24 +690,34 @@ function handleSingleDownload(url) {
  * 处理批量下载 (加入队列)
  */
 function handleBatchDownload() {
+  console.log('[GID] handleBatchDownload called');
   const stateManager = getStateManager();
-  if (!stateManager) return;
+  console.log('[GID] stateManager:', !!stateManager);
+  if (!stateManager) {
+    console.error('[GID] stateManager is null!');
+    return;
+  }
 
   const selectedImages = stateManager.getSelectedImages();
+  console.log('[GID] selectedImages:', selectedImages.length, selectedImages);
   if (selectedImages.length === 0) {
     showToast('请先选择要下载的图片', 'warning');
     return;
   }
 
   const urls = selectedImages.map(img => img.url);
+  console.log('[GID] URLs to download:', urls);
   getLogger().info('UI', 'Starting batch download', { count: urls.length, urls });
   
   const added = addBatchTask(async () => {
     return new Promise((resolve) => {
+      console.log('[GID] Sending downloadBatch message to service worker');
       chrome.runtime.sendMessage({
         action: 'downloadBatch',
         urls: urls
       }, (response) => {
+        console.log('[GID] Received response:', response);
+        console.log('[GID] chrome.runtime.lastError:', chrome.runtime.lastError);
         if (chrome.runtime.lastError) {
           const error = new Error(chrome.runtime.lastError.message);
           if (window.GeminiImageErrorLogger) {
