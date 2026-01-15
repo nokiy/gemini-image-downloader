@@ -1,6 +1,8 @@
 // [IN]: chrome.downloads API / chrome.downloads API
 // [OUT]: generateFilename(), resolveConflict() / 文件名生成函数、冲突处理函数
 // [POS]: src/background/file-naming.js - File naming layer / 文件命名层
+// Protocol: When updating me, sync this header + parent folder's .folder.md
+// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
 
 /**
  * Gemini Image File Naming Module

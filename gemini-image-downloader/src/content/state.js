@@ -1,6 +1,8 @@
 // [IN]: Detection module / 检测模块
 // [OUT]: State management functions, event emitter / 状态管理函数、事件发射器
 // [POS]: src/content/state.js - State management layer / 状态管理层
+// Protocol: When updating me, sync this header + parent folder's .folder.md
+// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
 
 /**
  * Gemini Image State Manager

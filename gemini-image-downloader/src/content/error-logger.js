@@ -1,6 +1,8 @@
 // [IN]: chrome.storage, Error objects / Chrome 存储、错误对象
 // [OUT]: Error logging functions, error stats / 错误日志函数、错误统计
 // [POS]: src/content/error-logger.js - Error tracking and reporting / 错误追踪与上报
+// Protocol: When updating me, sync this header + parent folder's .folder.md
+// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
 
 /**
  * Error Logger Module

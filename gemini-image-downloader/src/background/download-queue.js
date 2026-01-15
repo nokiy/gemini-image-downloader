@@ -1,6 +1,8 @@
 // [IN]: chrome.downloads API, file-naming module / chrome.downloads API、文件命名模块
 // [OUT]: addTask(), processQueue(), queue object / 添加任务函数、处理队列函数、队列对象
 // [POS]: src/background/download-queue.js - Download management layer / 下载管理层
+// Protocol: When updating me, sync this header + parent folder's .folder.md
+// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
 
 /**
  * Gemini Image Download Queue Manager

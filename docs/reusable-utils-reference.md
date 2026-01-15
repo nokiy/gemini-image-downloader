@@ -6,14 +6,439 @@
 
 ## 目录
 
-1. [错误日志系统 (error-logger.js)](#1-错误日志系统-error-loggerjs)
-2. [文件命名工具 (file-naming.js)](#2-文件命名工具-file-namingjs)
-3. [异步下载队列 (download-queue.js)](#3-异步下载队列-download-queuejs)
-4. [Google 高清原图还原 (google-image-utils.js)](#4-google-高清原图还原-google-image-utilsjs)
+1. [选择器配置化 (selectors.js)](#1-选择器配置化-selectorsjs) ⭐ 新增
+2. [统一日志规范 (logger.js)](#2-统一日志规范-loggerjs)
+3. [错误日志系统 (error-logger.js)](#3-错误日志系统-error-loggerjs)
+4. [文件命名工具 (file-naming.js)](#4-文件命名工具-file-namingjs)
+5. [异步下载队列 (download-queue.js)](#5-异步下载队列-download-queuejs)
+6. [Google 高清原图还原 (google-image-utils.js)](#6-google-高清原图还原-google-image-utilsjs)
+7. [代码加固规范 (断点防护)](#7-代码加固规范-断点防护)
 
 ---
 
-## 1. 错误日志系统 (error-logger.js)
+## 1. 选择器配置化 (selectors.js)
+
+### 复用等级
+⭐⭐⭐⭐⭐ 必须遵守的架构规范
+
+### 核心理念
+**将所有 DOM 选择器从业务代码中提取出来，集中到一个配置文件中管理。**
+
+这样做的好处：
+1. **单点修改**：目标网站页面更新时，只需修改配置文件
+2. **易于调试**：可以在控制台直接查看和测试选择器
+3. **版本管理**：支持多版本选择器配置
+4. **降低维护成本**：不用在几百行代码中搜索选择器
+
+### 使用场景
+- Chrome 扩展注入到第三方网站（如 Gemini、ChatGPT 等）
+- 需要定位特定 DOM 元素的脚本
+- 页面结构可能频繁变化的项目
+
+### 核心 API
+
+```javascript
+// 获取完整配置
+const selectors = window.GeminiSelectors;
+
+// 按分类获取
+const detectionSelectors = window.getGeminiSelectors('detection');
+const uiSelectors = window.getGeminiSelectors('ui');
+
+// 测试选择器（调试用）
+window.testGeminiSelector('button[data-test-id="download"]');
+// 返回: { selector, found: 3, elements: [...] }
+```
+
+### 完整代码
+
+```javascript
+// selectors.js - 选择器配置文件
+
+window.GeminiSelectors = {
+  // 配置版本（便于追踪）
+  version: '2024-12',
+  
+  // ===== 图片检测相关 =====
+  detection: {
+    // 下载按钮
+    downloadButton: 'download-generated-image-button button[data-test-id="download-generated-image-button"]',
+    
+    // 图片容器（按优先级顺序）
+    imageContainers: ['generated-image', 'single-image'],
+    
+    // 容器内的图片
+    containerImage: 'img.image',
+    
+    // Google 图片选择器
+    googleImage: 'img[src*="googleusercontent.com"]',
+    
+    // 排除的元素
+    avatarParent: '[data-participant-id]'
+  },
+
+  // ===== URL 模式 =====
+  urlPatterns: {
+    googleContent: 'googleusercontent.com',
+    generatedImage: '/gg-dl/',
+    avatar: '/a/'
+  },
+
+  // ===== UI 注入相关 =====
+  ui: {
+    // 用户头像按钮（按优先级）
+    userAvatar: [
+      'button[aria-label*="Google"]',
+      'button[aria-label*="Account"]',
+      '[data-test-id="user-menu-button"]'
+    ],
+    
+    // 导航栏
+    navbar: [
+      '[data-test-id="upgrade-button"]',
+      'header nav',
+      'header [role="navigation"]'
+    ],
+    
+    header: 'header',
+    headerButtons: 'header button'
+  },
+
+  // ===== 扩展自身元素 ID =====
+  extension: {
+    iconId: 'gemini-downloader-icon',
+    drawerId: 'gemini-downloader-drawer',
+    overlayId: 'gemini-downloader-overlay'
+  },
+
+  // ===== 阈值配置 =====
+  thresholds: {
+    minGeneratedSize: 200,
+    maxIconSize: 120
+  }
+};
+
+// 辅助函数
+window.getGeminiSelectors = function(category) {
+  if (category && window.GeminiSelectors[category]) {
+    return window.GeminiSelectors[category];
+  }
+  return window.GeminiSelectors;
+};
+
+// 调试工具
+window.testGeminiSelector = function(selector) {
+  try {
+    const elements = document.querySelectorAll(selector);
+    return { selector, found: elements.length, elements: Array.from(elements) };
+  } catch (e) {
+    return { selector, error: e.message };
+  }
+};
+```
+
+### 业务代码中的使用
+
+```javascript
+// detection.js
+
+// 获取配置
+function getSelectors() {
+  return window.GeminiSelectors?.detection || {
+    // 降级默认值
+    downloadButton: 'button[data-test-id="download"]',
+    imageContainers: ['div.image-container'],
+    containerImage: 'img'
+  };
+}
+
+function findImages() {
+  const selectors = getSelectors();
+  
+  // ✅ 使用配置中的选择器
+  const buttons = document.querySelectorAll(selectors.downloadButton);
+  
+  buttons.forEach(btn => {
+    // 遍历容器选择器列表
+    let container = null;
+    for (const containerSelector of selectors.imageContainers) {
+      container = btn?.closest(containerSelector);
+      if (container) break;
+    }
+    
+    if (container) {
+      const img = container.querySelector(selectors.containerImage);
+      // ...
+    }
+  });
+}
+```
+
+### 页面更新时的维护
+
+当目标网站更新后，只需修改 `selectors.js`：
+
+```javascript
+// 假设 Gemini 在 2025 年 1 月更新了页面
+
+// 修改前（2024-12 版本）
+downloadButton: 'download-generated-image-button button[data-test-id="download-generated-image-button"]'
+
+// 修改后（2025-01 版本）
+downloadButton: 'button[data-action="download-image"]'
+```
+
+**改动范围**：只修改一个文件，业务代码完全不变。
+
+### 进阶：多版本支持
+
+```javascript
+const SELECTOR_VERSIONS = {
+  'v2024-12': {
+    downloadButton: 'download-generated-image-button button[data-test-id="download"]',
+    imageContainers: ['generated-image', 'single-image']
+  },
+  'v2025-01': {
+    downloadButton: 'button[data-action="download-image"]',
+    imageContainers: ['ai-image-container', 'single-image-view']
+  }
+};
+
+// 自动检测页面版本
+function detectPageVersion() {
+  if (document.querySelector('ai-image-container')) return 'v2025-01';
+  return 'v2024-12';
+}
+
+window.GeminiSelectors = {
+  version: detectPageVersion(),
+  ...SELECTOR_VERSIONS[detectPageVersion()]
+};
+```
+
+---
+
+## 2. 统一日志规范 (logger.js)
+
+### 复用等级
+⭐⭐⭐⭐⭐ 直接复制，强制使用
+
+### 使用场景
+- **替代所有原生 `console.log/error/warn/info`**
+- 自动对接 `error-logger.js` 记录错误
+- 提供统一的日志格式和分级管理
+- 生产环境可一键关闭 debug 日志
+
+### 核心理念
+**禁止直接使用 `console.log`**，所有日志必须通过统一的 Logger 输出，好处：
+1. 日志格式统一，便于追踪
+2. 错误自动记录到存储，便于分析
+3. 可根据环境开关不同级别的日志
+4. 便于后续接入远程日志上报
+
+### 核心 API
+
+```javascript
+const logger = window.GeminiImageLogger;
+
+// DEBUG 级别（开发调试用）
+logger.debug('ModuleName', 'Debug message', { key: 'value' });
+
+// INFO 级别（关键流程信息）
+logger.info('ModuleName', 'Operation completed', { count: 10 });
+
+// WARN 级别（警告，不影响功能但需注意）
+logger.warn('ModuleName', 'Deprecated API used', { api: 'oldMethod' });
+
+// ERROR 级别（错误，自动记录到 error-logger）
+logger.error('ModuleName', new Error('Something failed'), { context: 'data' });
+
+// 性能计时
+const endTimer = logger.time('Heavy Operation');
+// ... 执行耗时操作 ...
+endTimer(); // 输出: [GID][Performance][Info] Heavy Operation completed in 123.45ms
+
+// 条件日志
+logger.logIf(isDevelopment, logger.debug, 'Dev', 'Debug info');
+```
+
+### 日志级别配置
+
+```javascript
+// 生产环境关闭 debug 日志
+logger.setLogConfig({
+  debug: false,  // 关闭 debug
+  info: true,    // 保留 info
+  warn: true,    // 保留 warn
+  error: true    // 始终开启
+});
+
+// 查看当前配置
+const config = logger.getLogConfig();
+```
+
+### 完整代码
+
+```javascript
+// logger.js
+// 统一日志规范：替代原生 console.log/error，自动对接 error-logger
+
+const LOG_PREFIX = '[GID]';
+const LOG_LEVELS = {
+  DEBUG: 'debug',
+  INFO: 'info',
+  WARN: 'warn',
+  ERROR: 'error'
+};
+
+// 日志开关（生产环境可设为 false 禁用 debug/info）
+const LOG_CONFIG = {
+  debug: true,
+  info: true,
+  warn: true,
+  error: true
+};
+
+function getErrorLogger() {
+  return window.GeminiImageErrorLogger || null;
+}
+
+function formatMessage(level, module, message, data) {
+  const timestamp = new Date().toISOString().slice(11, 23);
+  const moduleTag = module ? `[${module}]` : '';
+  return {
+    formatted: `${LOG_PREFIX}${moduleTag}[${level.toUpperCase()}]`,
+    timestamp,
+    message,
+    data
+  };
+}
+
+function debug(module, message, data = null) {
+  if (!LOG_CONFIG.debug) return;
+  const log = formatMessage(LOG_LEVELS.DEBUG, module, message, data);
+  if (data) {
+    console.log(log.formatted, message, data);
+  } else {
+    console.log(log.formatted, message);
+  }
+}
+
+function info(module, message, data = null) {
+  if (!LOG_CONFIG.info) return;
+  const log = formatMessage(LOG_LEVELS.INFO, module, message, data);
+  if (data) {
+    console.info(log.formatted, message, data);
+  } else {
+    console.info(log.formatted, message);
+  }
+}
+
+function warn(module, message, data = null) {
+  if (!LOG_CONFIG.warn) return;
+  const log = formatMessage(LOG_LEVELS.WARN, module, message, data);
+  if (data) {
+    console.warn(log.formatted, message, data);
+  } else {
+    console.warn(log.formatted, message);
+  }
+}
+
+function error(module, error, context = {}) {
+  if (!LOG_CONFIG.error) return;
+  
+  const log = formatMessage(LOG_LEVELS.ERROR, module, error instanceof Error ? error.message : error, context);
+  console.error(log.formatted, error, context);
+  
+  // 自动记录到 error-logger
+  const errorLogger = getErrorLogger();
+  if (errorLogger) {
+    let category = errorLogger.ERROR_CATEGORIES.UNKNOWN;
+    const moduleLower = module.toLowerCase();
+    
+    if (moduleLower.includes('detection')) {
+      category = errorLogger.ERROR_CATEGORIES.DETECTION;
+    } else if (moduleLower.includes('download') || moduleLower.includes('queue')) {
+      category = errorLogger.ERROR_CATEGORIES.DOWNLOAD;
+    } else if (moduleLower.includes('network') || moduleLower.includes('fetch')) {
+      category = errorLogger.ERROR_CATEGORIES.NETWORK;
+    } else if (moduleLower.includes('ui') || moduleLower.includes('render')) {
+      category = errorLogger.ERROR_CATEGORIES.UI;
+    } else if (moduleLower.includes('state')) {
+      category = errorLogger.ERROR_CATEGORIES.STATE;
+    }
+    
+    errorLogger.logError(error, {
+      category,
+      context: { module, ...context },
+      console: false
+    });
+  }
+}
+
+function time(label) {
+  const start = performance.now();
+  return () => {
+    const duration = (performance.now() - start).toFixed(2);
+    info('Performance', `${label} completed in ${duration}ms`);
+  };
+}
+
+function logIf(condition, logFn, ...args) {
+  if (condition) {
+    logFn(...args);
+  }
+}
+
+function setLogConfig(config) {
+  Object.assign(LOG_CONFIG, config);
+}
+
+function getLogConfig() {
+  return { ...LOG_CONFIG };
+}
+
+// 导出
+window.GeminiImageLogger = {
+  debug,
+  info,
+  warn,
+  error,
+  time,
+  logIf,
+  setLogConfig,
+  getLogConfig,
+  LOG_LEVELS
+};
+```
+
+### 使用示例
+
+```javascript
+// ❌ 错误写法（禁止）
+console.log('[GID] Images detected:', images);
+console.error('[GID] Failed:', error);
+
+// ✅ 正确写法
+const logger = window.GeminiImageLogger;
+logger.info('Detection', 'Images detected', { count: images.length });
+logger.error('Detection', error, { context: 'detectImages' });
+```
+
+### 与 error-logger 的配合
+
+`logger.js` 是前端日志输出，`error-logger.js` 是持久化存储：
+
+```javascript
+// logger.error() 会自动触发：
+// 1. console.error 输出到浏览器控制台
+// 2. errorLogger.logError() 保存到 chrome.storage.local
+// 3. 根据模块名自动分类（detection/download/ui...）
+```
+
+---
+
+## 3. 错误日志系统 (error-logger.js)
 
 ### 复用等级
 ⭐⭐⭐⭐⭐ 直接复制，无需修改
@@ -216,7 +641,7 @@ window.ErrorLogger = {
 
 ---
 
-## 2. 文件命名工具 (file-naming.js)
+## 4. 文件命名工具 (file-naming.js)
 
 ### 复用等级
 ⭐⭐⭐⭐⭐ 直接复制，无需修改
@@ -370,7 +795,7 @@ self.FileNaming = {
 
 ---
 
-## 3. 异步下载队列 (download-queue.js)
+## 5. 异步下载队列 (download-queue.js)
 
 ### 复用等级
 ⭐⭐⭐⭐ 提取核心后复用
@@ -633,7 +1058,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 ---
 
-## 4. Google 高清原图还原 (google-image-utils.js)
+## 6. Google 高清原图还原 (google-image-utils.js)
 
 ### 复用等级
 ⭐⭐⭐ 特定场景复用（Google 系产品专用）
@@ -809,6 +1234,224 @@ const thumb = GoogleImageUtils.getResizedImageUrl(hdUrl, 200);
 
 ---
 
+## 7. 代码加固规范 (断点防护)
+
+### 核心理念
+Chrome 扩展运行在复杂的宿主页面环境中，必须对 DOM 操作和对象访问进行**断点防护**，避免因页面结构变化或对象缺失导致扩展崩溃。
+
+### 防护等级
+⭐⭐⭐⭐⭐ 必须遵守
+
+### 常见脆弱点与防护方案
+
+#### 1. DOM 查询防护
+
+```javascript
+// ❌ 危险写法
+const btn = document.querySelector('.button');
+btn.addEventListener('click', handler); // btn 可能为 null
+
+// ✅ 安全写法
+const btn = document?.querySelector('.button');
+if (btn) {
+  btn.addEventListener('click', handler);
+}
+```
+
+#### 2. 链式调用防护
+
+```javascript
+// ❌ 危险写法
+const container = btn.closest('div').querySelector('img');
+// 如果 closest 返回 null，querySelector 会报错
+
+// ✅ 安全写法（使用可选链）
+const container = btn?.closest('div')?.querySelector('img');
+if (container) {
+  // 使用 container
+}
+```
+
+#### 3. 属性访问防护
+
+```javascript
+// ❌ 危险写法
+const width = img.naturalWidth || img.width || 0;
+// 如果 img 为 null，直接报错
+
+// ✅ 安全写法（使用空值合并）
+const width = img?.naturalWidth ?? img?.width ?? 0;
+```
+
+#### 4. 数组/对象防护
+
+```javascript
+// ❌ 危险写法
+images.forEach(img => {
+  // 假设 images 一定是数组
+});
+
+// ✅ 安全写法
+if (Array.isArray(images)) {
+  images.forEach(img => {
+    if (img && img.url) {
+      // 使用 img
+    }
+  });
+}
+```
+
+#### 5. 异步操作防护
+
+```javascript
+// ❌ 危险写法
+async function fetchData() {
+  const response = await fetch(url);
+  const data = await response.json();
+  return data;
+}
+
+// ✅ 安全写法
+async function fetchData() {
+  const logger = getLogger();
+  try {
+    if (!url || typeof url !== 'string') {
+      logger.warn('Network', 'Invalid URL', { url });
+      return null;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      logger.warn('Network', 'Fetch failed', {
+        url,
+        status: response.status
+      });
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    logger.error('Network', error, { context: 'fetchData', url });
+    return null; // 降级：返回 null 而不是抛出异常
+  }
+}
+```
+
+### 实战示例：detection.js 加固前后对比
+
+#### 加固前（脆弱）
+
+```javascript
+function findImagesByDOM() {
+  const images = [];
+  const downloadButtons = document.querySelectorAll('button');
+  
+  downloadButtons.forEach((btn) => {
+    const container = btn.closest('div');
+    const img = container.querySelector('img');
+    if (img.src.includes('google')) {
+      images.push({
+        url: img.src,
+        element: img
+      });
+    }
+  });
+  
+  return images;
+}
+```
+
+**问题点**：
+1. `container` 可能为 `null`
+2. `img` 可能为 `null`
+3. `img.src` 可能不存在
+4. 任何一步失败都会导致整个函数崩溃
+
+#### 加固后（健壮）
+
+```javascript
+function findImagesByDOM() {
+  const logger = getLogger();
+  const images = [];
+
+  try {
+    // 1. 检查 document 可用性
+    if (!document || !document.querySelectorAll) {
+      logger.warn('Detection', 'Document not available');
+      return images;
+    }
+
+    const downloadButtons = document.querySelectorAll('button');
+
+    // 2. 检查查询结果
+    if (!downloadButtons || downloadButtons.length === 0) {
+      logger.debug('Detection', 'No buttons found');
+      return images;
+    }
+
+    downloadButtons.forEach((btn) => {
+      try {
+        // 3. 使用可选链保护
+        const container = btn?.closest('div');
+        if (!container) return;
+
+        const img = container?.querySelector('img');
+        if (!img) return;
+
+        // 4. 类型和内容检查
+        const src = img?.src;
+        if (!src || typeof src !== 'string') return;
+
+        if (src.includes('google')) {
+          images.push({
+            url: src,
+            element: img
+          });
+        }
+      } catch (err) {
+        // 5. 单个元素失败不影响整体
+        logger.warn('Detection', 'Error processing button', {
+          error: err.message
+        });
+      }
+    });
+
+    logger.debug('Detection', `Found ${images.length} images`);
+    return images;
+
+  } catch (error) {
+    // 6. 顶层错误捕获
+    logger.error('Detection', error, { context: 'findImagesByDOM' });
+    return images; // 降级：返回空数组
+  }
+}
+```
+
+### 断点防护检查清单
+
+在编写涉及 DOM 操作的代码时，请逐项检查：
+
+- [ ] 所有 DOM 查询后都检查了返回值是否为 `null`
+- [ ] 所有链式调用都使用了可选链 (`?.`)
+- [ ] 所有属性访问都使用了空值合并 (`??`)
+- [ ] 所有数组操作前都检查了 `Array.isArray()`
+- [ ] 所有异步操作都包裹在 `try-catch` 中
+- [ ] 循环中的错误不会中断整个循环（内部 try-catch）
+- [ ] 所有错误都通过 `logger.error()` 记录
+- [ ] 所有关键分支都有降级方案（返回默认值而非抛出异常）
+
+### 性能考虑
+
+断点防护会增加少量代码，但**不会**明显影响性能：
+- 可选链 (`?.`) 和空值合并 (`??`) 是原生操作符，性能损耗极低
+- `try-catch` 只在真正抛出异常时才有性能损失
+- 类型检查（如 `typeof`、`Array.isArray`）是 JavaScript 引擎高度优化的操作
+
+**建议**：在关键路径（如每秒触发多次的监听器）中，可以适当减少检查粒度，但在初始化和错误边界必须严格防护。
+
+---
+
 ## 📦 建议的项目结构
 
 ```
@@ -817,10 +1460,13 @@ your-extension/
 ├── libs/
 │   └── jszip.min.js           ← 下载: https://stuk.github.io/jszip/
 ├── src/
+│   ├── config/
+│   │   └── selectors.js       ← 选择器配置（新增）⭐
 │   ├── utils/
-│   │   ├── error-logger.js    ← 直接复制
-│   │   ├── file-naming.js     ← 直接复制
-│   │   ├── download-queue.js  ← 直接复制
+│   │   ├── logger.js          ← 统一日志
+│   │   ├── error-logger.js    ← 错误存储
+│   │   ├── file-naming.js     ← 文件命名
+│   │   ├── download-queue.js  ← 下载队列
 │   │   └── google-image-utils.js ← Google 专用
 │   ├── background/
 │   │   └── service_worker.js
@@ -837,15 +1483,110 @@ your-extension/
     └── icon128.png
 ```
 
+### manifest.json 加载顺序
+
+```json
+{
+  "content_scripts": [{
+    "js": [
+      "src/config/selectors.js",       // 1. 选择器配置（最先加载）⭐
+      "src/content/error-logger.js",   // 2. 错误日志基础
+      "src/utils/logger.js",           // 3. 统一日志接口
+      "src/content/state.js",          // 4. 状态管理
+      "src/content/detection.js",      // 5. 业务逻辑
+      "src/content/ui.js",             // 6. UI 渲染
+      "src/content/content.js"         // 7. 主入口
+    ]
+  }]
+}
+```
+
+**关键**：`selectors.js` 必须最先加载，`logger.js` 在其他业务模块之前加载。
+
 ---
 
 ## 📝 更新日志
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
+| 2024-12-28 | v1.2 | 新增选择器配置化 (selectors.js)，解耦 DOM 依赖 |
+| 2024-12-28 | v1.1 | 新增统一日志规范 (logger.js)、断点防护规范 |
 | 2024-12-28 | v1.0 | 初始版本，从 Gemini Image Downloader 提取 |
 
 ---
 
-> 💡 **提示**：使用前请根据实际项目需求调整命名空间（如 `window.ErrorLogger` → `window.YourProject.ErrorLogger`）
+## 🚀 快速开始指南
+
+### 步骤 1：复制核心工具
+
+```bash
+# 复制到你的项目
+mkdir -p your-project/src/config
+mkdir -p your-project/src/utils
+
+cp src/config/selectors.js your-project/src/config/
+cp src/utils/logger.js your-project/src/utils/
+cp src/content/error-logger.js your-project/src/utils/
+cp src/background/file-naming.js your-project/src/utils/
+```
+
+### 步骤 2：修改 manifest.json
+
+```json
+{
+  "content_scripts": [{
+    "js": [
+      "src/config/selectors.js",       // 最先加载
+      "src/utils/error-logger.js",
+      "src/utils/logger.js",
+      "src/content/your-code.js"
+    ]
+  }]
+}
+```
+
+### 步骤 3：在代码中使用
+
+```javascript
+// 1. 获取选择器配置
+function getSelectors() {
+  return window.GeminiSelectors?.detection || {
+    // 降级默认值
+    targetButton: 'button.download',
+    imageContainer: 'div.image'
+  };
+}
+
+// 2. 获取 logger
+const logger = window.GeminiImageLogger;
+
+// 3. 使用配置中的选择器
+function findElements() {
+  const selectors = getSelectors();
+  const buttons = document.querySelectorAll(selectors.targetButton);
+  
+  // 替换所有 console.log
+  logger.info('ModuleName', 'Found elements', { count: buttons.length });
+  
+  // 错误处理
+  try {
+    // 你的代码
+  } catch (error) {
+    logger.error('ModuleName', error, { context: 'findElements' });
+  }
+}
+
+// 4. 添加断点防护
+const element = document?.querySelector(getSelectors().imageContainer);
+if (element) {
+  // 安全使用
+}
+```
+
+---
+
+> 💡 **提示**：
+> - 使用前请根据实际项目需求调整命名空间（如 `window.GeminiImageLogger` → `window.YourProject.Logger`）
+> - 生产环境建议关闭 debug 日志：`logger.setLogConfig({ debug: false })`
+> - 定期查看 `error-logger` 存储，分析常见错误并加固代码
 

@@ -1,0 +1,64 @@
+# ==========================
+# Gemini Image Downloader
+# .gitignore
+# ==========================
+
+# --------------------------
+# macOS
+# --------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# --------------------------
+# IDE / Editor
+# --------------------------
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --------------------------
+# Claude Code / AI Tools
+# --------------------------
+.claude/
+
+# --------------------------
+# Node.js (if added later)
+# --------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --------------------------
+# Build outputs
+# --------------------------
+dist/
+build/
+*.zip
+
+# --------------------------
+# Logs
+# --------------------------
+*.log
+logs/
+
+# --------------------------
+# Temp files
+# --------------------------
+*.tmp
+*.temp
+.cache/
+
+# --------------------------
+# Environment / Secrets
+# --------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key

@@ -243,9 +243,62 @@ gemini-image-downloader/
 
 ---
 
+### 📅 2025-12-28 - V1.1.0.15 代码规范化与架构升级
+
+**任务**：统一日志规范、断点防护加固、选择器配置化
+
+**完成项目**：
+
+#### 1. 选择器配置化 (selectors.js)
+- ✅ 新增 `src/config/selectors.js` 集中管理所有 DOM 选择器
+- ✅ 将 `detection.js` 中的硬编码选择器提取到配置
+- ✅ 将 `ui.js` 中的硬编码选择器提取到配置
+- ✅ 支持调试工具 `window.testGeminiSelector()`
+
+#### 2. 统一日志规范 (logger.js)
+- ✅ 新增 `src/utils/logger.js` 统一日志接口
+- ✅ 四个日志级别：debug/info/warn/error
+- ✅ error 级别自动对接 error-logger.js 持久化
+- ✅ 支持环境开关（生产环境可关闭 debug）
+- ✅ 替换所有原生 console.log/error 调用
+
+#### 3. 断点防护加固
+- ✅ `detection.js` 增加 33 个断点防护点
+- ✅ 使用可选链 `?.` 和空值合并 `??`
+- ✅ 局部 try-catch 隔离单个元素错误
+- ✅ 顶层错误捕获与降级返回
+
+**产出文件**：
+```
+gemini-image-downloader/
+├── manifest.json              # 🔄 更新：v1.1.0.15，加载顺序调整
+├── src/
+│   ├── config/
+│   │   └── selectors.js       # 🆕 新增：选择器配置
+│   ├── utils/
+│   │   └── logger.js          # 🆕 新增：统一日志模块
+│   ├── content/
+│   │   ├── detection.js       # 🔄 修改：配置化 + 断点防护
+│   │   └── ui.js              # 🔄 修改：配置化 + 统一日志
+├── docs/
+│   ├── reusable-utils-reference.md  # 🔄 更新：新增章节
+│   ├── code-improvements-v1.1.md    # 🆕 新增：改进说明
+│   └── changelog.md                 # 🔄 更新
+```
+
+**验收**：⏳ 待测试
+
+---
+
 ## 🎉 版本历史
 
-### V1.1.0.0 (当前)
+### V1.1.0.15 (当前)
+- ✅ 选择器配置化（解耦 DOM 依赖）
+- ✅ 统一日志规范（替代原生 console）
+- ✅ 断点防护加固（33 个防护点）
+- ✅ 文档更新（可复用工具库参考）
+
+### V1.1.0.0
 - ✅ 页面内悬浮图标
 - ✅ 右侧抽屉 UI
 - ✅ 缩略图列表

@@ -1,15 +1,55 @@
-// [IN]: State module, Detection module / 状态模块、检测模块
+// [IN]: State module, Detection module, Selectors config / 状态模块、检测模块、选择器配置
 // [OUT]: UI rendering functions, initUI() / UI 渲染函数、初始化函数
 // [POS]: src/content/ui.js - UI rendering layer / UI 渲染层
+// Protocol: When updating me, sync this header + parent folder's .folder.md
+// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
 
 /**
  * Gemini Image Downloader UI Module
  * 负责渲染图标、抽屉、缩略图列表
  */
 
-const ICON_ID = 'gemini-downloader-icon';
-const DRAWER_ID = 'gemini-downloader-drawer';
-const OVERLAY_ID = 'gemini-downloader-overlay';
+// 获取 UI 选择器配置
+function getUISelectors() {
+  return window.GeminiSelectors?.ui || {
+    userAvatar: [],
+    navbar: [],
+    navbarUserAvatar: [],
+    header: 'header',
+    headerButtons: 'header button',
+    headerChildren: ':scope > div'
+  };
+}
+
+// 获取扩展元素 ID 配置
+function getExtensionIds() {
+  return window.GeminiSelectors?.extension || {
+    iconId: 'gemini-downloader-icon',
+    drawerId: 'gemini-downloader-drawer',
+    overlayId: 'gemini-downloader-overlay'
+  };
+}
+
+// 获取日志工具
+function getLogger() {
+  return window.GeminiImageLogger || {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {}
+  };
+}
+
+// 使用 getter 函数获取 ID，避免模块加载顺序问题
+function getIconId() {
+  return getExtensionIds().iconId;
+}
+function getDrawerId() {
+  return getExtensionIds().drawerId;
+}
+function getOverlayId() {
+  return getExtensionIds().overlayId;
+}
 
 // 任务队列：最多 2 个任务（1 个批量 + 1 个单个）
 const downloadQueue = {
@@ -69,7 +109,7 @@ async function processBatchQueue() {
     await task();
     
   } catch (error) {
-    console.error('[GID] Batch task error:', error);
+    getLogger().error('UI', error, { context: 'processBatchQueue' });
   } finally {
     downloadQueue.isBatchRunning = false;
     if (stateManager && !downloadQueue.isSingleRunning) {
@@ -95,7 +135,7 @@ async function processSingleQueue() {
     await task();
     
   } catch (error) {
-    console.error('[GID] Single task error:', error);
+    getLogger().error('UI', error, { context: 'processSingleQueue' });
   } finally {
     downloadQueue.isSingleRunning = false;
     if (stateManager && !downloadQueue.isBatchRunning) {
@@ -108,37 +148,33 @@ async function processSingleQueue() {
  * 查找 Gemini 导航栏中的用户头像元素
  */
 function findUserAvatar() {
-  // 按优先级查找用户头像相关元素
-  const avatarSelectors = [
-    // 用户头像按钮
-    'button[aria-label*="Google"]',
-    'button[aria-label*="Account"]',
-    'button[aria-label*="帐号"]',
-    'button[aria-label*="账号"]',
-    // 带头像图片的按钮
-    'button img[alt*="Profile"]',
-    'button img[alt*="头像"]',
-    // 通用用户菜单
-    '[data-test-id="user-menu-button"]',
-    // 包含用户信息的区域
-    'header button:has(img[src*="googleusercontent"])',
-  ];
+  const logger = getLogger();
+  const selectors = getUISelectors();
+  
+  // 使用配置中的用户头像选择器列表
+  const avatarSelectors = selectors.userAvatar;
 
   for (const selector of avatarSelectors) {
     try {
       const el = document.querySelector(selector);
-      if (el) return el;
+      if (el) {
+        logger.debug('UI', 'Found user avatar via selector', { selector });
+        return el;
+      }
     } catch (e) {
-      // :has 可能不被支持
+      // :has 可能不被支持，继续尝试下一个
+      logger.debug('UI', 'Selector not supported', { selector, error: e.message });
     }
   }
 
-  // 备用：查找 header 中最右边的按钮
-  const headerButtons = document.querySelectorAll('header button');
+  // 备用：查找 header 中最右边的按钮（使用配置中的选择器）
+  const headerButtons = document.querySelectorAll(selectors.headerButtons);
   if (headerButtons.length > 0) {
+    logger.debug('UI', 'Found user avatar via fallback (last header button)');
     return headerButtons[headerButtons.length - 1];
   }
 
+  logger.debug('UI', 'User avatar not found');
   return null;
 }
 
@@ -146,6 +182,9 @@ function findUserAvatar() {
  * 查找 Gemini 导航栏
  */
 function findNavbar() {
+  const logger = getLogger();
+  const selectors = getUISelectors();
+
   // 优先通过用户头像定位
   const avatar = findUserAvatar();
   if (avatar) {
@@ -156,46 +195,52 @@ function findNavbar() {
       parent = parent.parentElement;
     }
     if (parent) {
-      console.log('[GID] Found navbar via avatar:', parent);
+      logger.info('UI', 'Found navbar via avatar', { element: parent.tagName });
       return parent;
     }
   }
 
-  // Gemini 页面导航栏的可能选择器
-  const selectors = [
-    // PRO 按钮附近
-    '[data-test-id="upgrade-button"]',
-    // 邀请按钮附近
-    'button[aria-label*="Invite"]',
-    'button[aria-label*="邀请"]',
-    // 通用导航栏选择器
-    'header nav',
-    'header > div > div:last-child',
-    'header [role="navigation"]',
-    // Gemini 特定的导航区域
-    '.header-actions',
-    '.toolbar-actions',
-  ];
+  // 使用配置中的导航栏选择器列表
+  const navbarSelectors = selectors.navbar;
 
-  for (const selector of selectors) {
-    const el = document.querySelector(selector);
-    if (el) {
-      console.log('[GID] Found navbar via selector:', selector);
-      return el.parentElement || el;
+  for (const selector of navbarSelectors) {
+    try {
+      const el = document.querySelector(selector);
+      if (el) {
+        logger.info('UI', 'Found navbar via selector', { selector });
+        return el.parentElement || el;
+      }
+    } catch (e) {
+      logger.debug('UI', 'Navbar selector error', { selector, error: e.message });
     }
   }
 
-  // 备用：查找 header 下的最后一个子元素
-  const header = document.querySelector('header');
+  // 备用：查找 header 下的最后一个子元素（使用配置中的选择器）
+  const header = document.querySelector(selectors.header);
   if (header) {
-    const children = header.querySelectorAll(':scope > div');
+    const children = header.querySelectorAll(selectors.headerChildren);
     if (children.length > 0) {
-      console.log('[GID] Found navbar via header children');
+      logger.info('UI', 'Found navbar via header children');
       return children[children.length - 1];
     }
+
+    // 新增：尝试查找 header 内任何包含按钮的容器
+    const headerButtons = header.querySelectorAll('button');
+    if (headerButtons.length > 0) {
+      const lastButton = headerButtons[headerButtons.length - 1];
+      const container = lastButton.parentElement;
+      if (container && container !== header) {
+        logger.info('UI', 'Found navbar via header button container');
+        return container;
+      }
+    }
+
+    // 最终回退：直接使用 header
+    logger.info('UI', 'Using header as navbar fallback');
     return header;
   }
 
+  logger.warn('UI', 'Navbar not found');
   return null;
 }
 
@@ -204,12 +249,12 @@ function findNavbar() {
  */
 function createIcon() {
   // 检查是否已存在
-  if (document.getElementById(ICON_ID)) {
-    return document.getElementById(ICON_ID);
+  if (document.getElementById(getIconId())) {
+    return document.getElementById(getIconId());
   }
 
   const icon = document.createElement('div');
-  icon.id = ICON_ID;
+  icon.id = getIconId();
   icon.className = 'gid-icon';
   icon.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -225,23 +270,35 @@ function createIcon() {
     toggleDrawer();
   });
 
+  const logger = getLogger();
+  const selectors = getUISelectors();
+  
   // 尝试注入到导航栏
   const navbar = findNavbar();
   if (navbar) {
-    // 插入到导航栏，在用户头像之前
-    const userAvatar = navbar.querySelector('[data-test-id="user-menu-button"], .user-avatar, [aria-label*="Account"], img[alt*="Profile"]');
-    if (userAvatar) {
+    // 使用配置中的导航栏用户头像选择器列表
+    let userAvatar = null;
+    for (const selector of selectors.navbarUserAvatar) {
+      try {
+        userAvatar = navbar.querySelector(selector);
+        if (userAvatar) break;
+      } catch (e) {
+        // 选择器可能不支持，继续
+      }
+    }
+    
+    if (userAvatar && userAvatar.parentElement) {
       userAvatar.parentElement.insertBefore(icon, userAvatar);
     } else {
       navbar.appendChild(icon);
     }
     icon.classList.add('gid-icon-navbar');
-    console.log('[GID] Icon injected into navbar');
+    logger.info('UI', 'Icon injected into navbar');
   } else {
     // 回退：使用 fixed 定位
     document.body.appendChild(icon);
     icon.classList.add('gid-icon-fixed');
-    console.log('[GID] Icon using fixed position (navbar not found)');
+    logger.info('UI', 'Icon using fixed position (navbar not found)');
   }
 
   return icon;
@@ -251,9 +308,10 @@ function createIcon() {
  * 更新图标状态
  */
 function updateIcon(state) {
-  const icon = document.getElementById(ICON_ID);
+  const logger = getLogger();
+  const icon = document.getElementById(getIconId());
   if (!icon) {
-    console.log('[GID] updateIcon: icon not found');
+    logger.debug('UI', 'updateIcon: icon not found');
     return;
   }
 
@@ -262,7 +320,7 @@ function updateIcon(state) {
   const shouldShow = state.ui.isIconVisible;
   icon.style.display = shouldShow ? 'flex' : 'none';
   
-  console.log('[GID] updateIcon:', { 
+  logger.debug('UI', 'updateIcon', { 
     shouldShow, 
     imageCount: state.images.length,
     isIconVisible: state.ui.isIconVisible 
@@ -282,19 +340,19 @@ function updateIcon(state) {
  */
 function createDrawer() {
   // 检查是否已存在
-  if (document.getElementById(DRAWER_ID)) {
-    return document.getElementById(DRAWER_ID);
+  if (document.getElementById(getDrawerId())) {
+    return document.getElementById(getDrawerId());
   }
 
   // 遮罩层
   const overlay = document.createElement('div');
-  overlay.id = OVERLAY_ID;
+  overlay.id = getOverlayId();
   overlay.className = 'gid-overlay';
   overlay.addEventListener('click', closeDrawer);
 
   // 抽屉
   const drawer = document.createElement('div');
-  drawer.id = DRAWER_ID;
+  drawer.id = getDrawerId();
   drawer.className = 'gid-drawer';
   drawer.innerHTML = `
     <div class="gid-drawer-header">
@@ -463,13 +521,10 @@ function renderImageList(state) {
     // 更新头部信息
     updateHeaderInfo(state);
   } catch (error) {
-    console.error('[GID] Error rendering image list:', error);
-    if (window.GeminiImageErrorLogger) {
-      window.GeminiImageErrorLogger.logUIError(error, {
-        context: 'renderImageList',
-        imageCount: displayImages.length
-      });
-    }
+    getLogger().error('UI', error, {
+      context: 'renderImageList',
+      imageCount: displayImages.length
+    });
   }
 }
 
@@ -513,8 +568,8 @@ function updateHeaderInfo(state) {
  * 打开抽屉
  */
 function openDrawer() {
-  const drawer = document.getElementById(DRAWER_ID);
-  const overlay = document.getElementById(OVERLAY_ID);
+  const drawer = document.getElementById(getDrawerId());
+  const overlay = document.getElementById(getOverlayId());
 
   if (drawer && overlay) {
     overlay.classList.add('visible');
@@ -532,8 +587,8 @@ function openDrawer() {
  * 关闭抽屉
  */
 function closeDrawer() {
-  const drawer = document.getElementById(DRAWER_ID);
-  const overlay = document.getElementById(OVERLAY_ID);
+  const drawer = document.getElementById(getDrawerId());
+  const overlay = document.getElementById(getOverlayId());
 
   if (drawer && overlay) {
     overlay.classList.remove('visible');
@@ -635,7 +690,7 @@ function handleBatchDownload() {
   }
 
   const urls = selectedImages.map(img => img.url);
-  console.log('[GID] Starting batch download with', urls.length, 'URLs:', urls);
+  getLogger().info('UI', 'Starting batch download', { count: urls.length, urls });
   
   const added = addBatchTask(async () => {
     return new Promise((resolve) => {
@@ -655,7 +710,7 @@ function handleBatchDownload() {
           }
           updateStatusBar('批量下载失败', 'error');
         } else {
-          console.log('[GID] Batch download response:', response);
+          getLogger().info('UI', 'Batch download response', { response });
         }
         resolve();
       });
@@ -720,7 +775,7 @@ function setupMessageListener() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'batchProgress') {
       const { current, total, status, message } = request;
-      console.log('[GID] Progress:', message);
+      getLogger().debug('UI', 'Progress update', { current, total, message });
       updateStatusBar(message, status);
       sendResponse({ received: true });
     }
@@ -739,10 +794,12 @@ function initUI() {
   let retryCount = 0;
   const maxRetries = 10;
   
+  const logger = getLogger();
+  
   function tryCreateIcon() {
-    const existingIcon = document.getElementById(ICON_ID);
+    const existingIcon = document.getElementById(getIconId());
     if (existingIcon) {
-      console.log('[GID] Icon already exists');
+      logger.debug('UI', 'Icon already exists');
       return;
     }
     
@@ -752,13 +809,13 @@ function initUI() {
       setupStateListeners();
     } else {
       retryCount++;
-      console.log(`[GID] Navbar not found, retry ${retryCount}/${maxRetries}...`);
+      logger.debug('UI', `Navbar not found, retry ${retryCount}/${maxRetries}...`);
       setTimeout(tryCreateIcon, 500);
     }
   }
   
   tryCreateIcon();
-  console.log('[GID] UI initialization started');
+  logger.info('UI', 'UI initialization started');
 }
 
 /**
@@ -799,7 +856,7 @@ function setupStateListeners() {
     // 初始更新
     updateIcon(stateManager.getState());
   }
-  console.log('[GID] State listeners ready');
+  getLogger().info('UI', 'State listeners ready');
 }
 
 /**
