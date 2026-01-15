@@ -1,6 +1,8 @@
-/* 
- * Gemini Image Downloader UI Styles
- */
+/* [IN]: No external dependencies / 无外部依赖 */
+/* [OUT]: In-page UI styling (drawer, thumbnails, lazy loading, animations) / 页面内 UI 样式（抽屉、缩略图、懒加载、动画） */
+/* [POS]: src/content/ui.css - Visual styles for in-page UI components / 页面内 UI 组件的视觉样式 */
+/* Protocol: When updating me, sync this header + parent folder's .folder.md */
+/* 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md */
 
 /* ==================== 导航栏图标（默认） ==================== */
 .gid-icon {

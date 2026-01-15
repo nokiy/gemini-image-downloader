@@ -52,9 +52,18 @@ function getExtension(url, contentType) {
  */
 async function fetchWithRetry(url, index = 0, attempt = 1) {
   try {
+    // 创建超时信号（兼容旧版 Chrome）
+    let timeoutSignal;
+    if (typeof AbortSignal.timeout === 'function') {
+      timeoutSignal = AbortSignal.timeout(30000); // Chrome 103+
+    } else {
+      const controller = new AbortController();
+      timeoutSignal = controller.signal;
+      setTimeout(() => controller.abort(), 30000);
+    }
+
     const response = await fetch(url, {
-      // 添加超时控制（通过 AbortController）
-      signal: AbortSignal.timeout(30000) // 30秒超时
+      signal: timeoutSignal // 30秒超时
     });
 
     // 检查是否可重试

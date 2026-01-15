@@ -53,7 +53,7 @@ async function logError(error, options = {}) {
 
   // 创建日志项
   const logEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
     category,
     message,
     stack,
