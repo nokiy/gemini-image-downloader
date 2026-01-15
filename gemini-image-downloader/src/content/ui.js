@@ -542,10 +542,13 @@ function renderImageList(state) {
  * 更新头部信息
  */
 function updateHeaderInfo(state) {
+  const drawer = document.getElementById(getDrawerId());
+  if (!drawer) return;
+
   const { displayImages, selectedUrls, images } = state;
 
   // 更新图片计数
-  const countEl = document.querySelector('.gid-drawer-count');
+  const countEl = drawer.querySelector('.gid-drawer-count');
   if (countEl) {
     const total = images.length;
     const displayed = displayImages.length;
@@ -555,7 +558,7 @@ function updateHeaderInfo(state) {
   }
 
   // 更新全选按钮状态
-  const selectAllBtn = document.querySelector('.gid-btn-select-all');
+  const selectAllBtn = drawer.querySelector('.gid-btn-select-all');
   if (selectAllBtn) {
     const allSelected = displayImages.length > 0 &&
       displayImages.every(img => selectedUrls.has(img.url));
@@ -564,7 +567,7 @@ function updateHeaderInfo(state) {
   }
 
   // 更新批量下载按钮状态
-  const batchBtn = document.querySelector('.gid-btn-batch');
+  const batchBtn = drawer.querySelector('.gid-btn-batch');
   if (batchBtn) {
     const selectedCount = selectedUrls.size;
     batchBtn.disabled = selectedCount === 0;
