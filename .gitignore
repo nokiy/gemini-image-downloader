@@ -25,6 +25,9 @@
 # Claude Code / AI Tools
 # --------------------------
 .claude/
+CLAUDE.md
+**/CLAUDE.md
+README.md
 
 # --------------------------
 # Node.js (if added later)
