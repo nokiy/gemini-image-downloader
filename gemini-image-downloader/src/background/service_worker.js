@@ -104,21 +104,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const tabId = sender.tab?.id;
 
   if (request.action === 'downloadSingle') {
-    handleSingleDownload(request.url).then(sendResponse);
+    handleSingleDownload(request.url)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   if (request.action === 'downloadBatch') {
-    handleBatchDownload(request.urls, tabId).then(sendResponse);
+    handleBatchDownload(request.urls, tabId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   if (request.action === 'getDownloadProgress') {
     // 获取当前下载进度
-    getDownloadProgress().then(sendResponse);
+    getDownloadProgress()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   if (request.action === 'clearDownloadProgress') {
     // 清除下载进度
-    clearDownloadProgress().then(sendResponse);
+    clearDownloadProgress()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   return false;

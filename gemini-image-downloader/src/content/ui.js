@@ -708,9 +708,32 @@ function handleBatchDownload() {
               error: chrome.runtime.lastError.message
             });
           }
-          updateStatusBar('批量下载失败', 'error');
+          updateStatusBar(`批量下载失败: ${chrome.runtime.lastError.message}`, 'error');
+          resolve();
+          return;
+        }
+
+        // 检查响应结果
+        if (response && response.success !== false) {
+          getLogger().info('UI', 'Batch download completed', { response });
+          const successCount = response.successCount || urls.length;
+          const failCount = response.failCount || 0;
+          if (failCount > 0) {
+            updateStatusBar(`下载完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
+          } else {
+            updateStatusBar(`成功下载 ${successCount} 张图片`, 'success');
+          }
         } else {
-          getLogger().info('UI', 'Batch download response', { response });
+          const errorMsg = response?.error || '未知错误';
+          if (window.GeminiImageErrorLogger) {
+            window.GeminiImageErrorLogger.logDownloadError(new Error(errorMsg), {
+              urls,
+              count: urls.length,
+              type: 'batch-download',
+              response
+            });
+          }
+          updateStatusBar(`批量下载失败: ${errorMsg}`, 'error');
         }
         resolve();
       });
