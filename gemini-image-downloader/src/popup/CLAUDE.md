@@ -1,0 +1,13 @@
+# Folder: src/popup
+
+> Trigger: When this folder's structure/responsibilities/file list changes, update this document.
+> 触发条件：当本文件夹的结构/职责/文件列表变化时，更新此文档。
+
+Popup user interface for extension interaction / 扩展交互的弹窗用户界面
+Orchestrates image collection, full content injection fallback (JS/CSS), ZIP packaging, and download / 编排图片收集、完整内容注入兜底（JS/CSS）、ZIP 打包和下载
+Handles user feedback, retry logic, and error states / 处理用户反馈、重试逻辑和错误状态
+
+## Files
+- `popup.html`: Popup HTML structure / 弹窗 HTML 结构
+- `popup.css`: Popup styling and UI design / 弹窗样式和 UI 设计
+- `popup.js`: Popup logic for image download orchestration / 图片下载编排的弹窗逻辑
