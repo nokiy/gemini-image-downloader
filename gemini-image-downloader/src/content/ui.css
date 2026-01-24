@@ -1,34 +1,46 @@
 /* [IN]: No external dependencies / 无外部依赖 */
-/* [OUT]: In-page UI styling (drawer, thumbnails, lazy loading, animations) / 页面内 UI 样式（抽屉、缩略图、懒加载、动画） */
-/* [POS]: src/content/ui.css - Visual styles for in-page UI components / 页面内 UI 组件的视觉样式 */
-/* Protocol: When updating me, sync this header + parent folder's .folder.md */
-/* 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md */
+/* [OUT]: In-page UI styling (drawer, thumbnails, preview panel, animations) / 页面内 UI 样式（抽屉、缩略图、预览面板、动画） */
+/* [POS]: src/content/ui.css - Visual styles for in-page UI components including preview / 页面内 UI 组件的视觉样式（含预览） */
+/* [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md */
 
 /* ==================== 导航栏图标（默认） ==================== */
+/* ==================== 导航栏图标（Pro Design） ==================== */
 .gid-icon {
   position: relative;
-  width: 40px;
-  height: 40px;
-  background: transparent;
-  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  /* Squircle styling */
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #5f6368;
-  transition: background-color 0.2s, color 0.2s;
+  color: #444746;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   margin: 0 4px;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .gid-icon:hover {
-  background: rgba(95, 99, 104, 0.1);
-  color: #202124;
+  background: #ffffff;
+  color: #1a73e8;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.gid-icon:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 .gid-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.05));
 }
 
 /* 导航栏模式 */
@@ -39,50 +51,51 @@
 /* 固定定位模式（备用） */
 .gid-icon.gid-icon-fixed {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 56px;
-  height: 56px;
-  background: #1a73e8;
-  color: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  top: 16px;
+  right: 16px;
+  margin: 0;
   z-index: 9999;
 }
 
-.gid-icon.gid-icon-fixed:hover {
-  background: #1557b0;
-  color: white;
-  transform: scale(1.05);
-}
-
-.gid-icon.gid-icon-fixed svg {
-  width: 24px;
-  height: 24px;
-}
-
-/* Badge */
+/* Badge (Minimalist Red Text - Extra Bold) */
 .gid-badge {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  background: #d93025;
-  color: white;
-  font-size: 10px;
-  font-weight: 500;
-  padding: 1px 4px;
-  border-radius: 8px;
-  min-width: 14px;
-  text-align: center;
-  line-height: 1.2;
-  font-family: 'Google Sans', Roboto, sans-serif;
+  top: 3px;
+  right: 5px;
+  background: transparent;
+  color: #d93025;
+  /* Vivid Google Red */
+  font-size: 15px;
+  /* Larger text */
+  font-weight: 900;
+  /* Maximum bold */
+  padding: 0;
+  min-width: auto;
+  height: auto;
+  line-height: 1;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Google Sans', system-ui, -apple-system, sans-serif;
+  /* Subtle light stroke to ensure separation from icon details */
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9), 0 -1px 0 rgba(255, 255, 255, 0.9), 1px 0 0 rgba(255, 255, 255, 0.9), -1px 0 0 rgba(255, 255, 255, 0.9);
+  transform: scale(1);
+  transition: transform 0.2s ease-out;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* 数量增加时的动画 */
+.gid-badge.bump {
+  transform: scale(1.4);
 }
 
 .gid-icon.gid-icon-fixed .gid-badge {
-  top: -4px;
-  right: -4px;
-  font-size: 11px;
-  padding: 2px 6px;
-  border: 2px solid white;
+  top: 4px;
+  right: 5px;
 }
 
 /* 抽屉 */
@@ -147,6 +160,13 @@
   color: #202124;
 }
 
+/* 右上角操作区域（日志按钮 + 关闭按钮） */
+.gid-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .gid-drawer-count {
   font-size: 12px;
   color: #5f6368;
@@ -156,6 +176,42 @@
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+/* 去水印开关（抽屉中） */
+.gid-watermark-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #5f6368;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f8f9fa;
+  border: 1px solid #dadce0;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.gid-watermark-toggle:hover {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+
+.gid-watermark-toggle:has(input:checked) {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+
+.gid-remove-watermark-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: #1a73e8;
+  cursor: pointer;
+  margin: 0;
 }
 
 /* Buttons */
@@ -226,14 +282,14 @@
   background: white;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   aspect-ratio: 16/9;
   transition: all 0.2s;
   border: 2px solid transparent;
 }
 
 .gid-image-item:hover {
-  box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
 }
 
 .gid-image-item.selected {
@@ -299,10 +355,39 @@
   left: 0;
   width: 100%;
   padding: 24px 8px 8px;
-  background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
   color: white;
   font-size: 11px;
   pointer-events: none;
+}
+
+.gid-btn-preview-item {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3c4043;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+}
+
+.gid-btn-preview-item:hover {
+  background: white;
+  color: #1a73e8;
+}
+
+.gid-btn-preview-item svg {
+  width: 16px;
+  height: 16px;
 }
 
 .gid-btn-download {
@@ -320,7 +405,7 @@
   justify-content: center;
   color: #3c4043;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .gid-btn-download:hover {
@@ -389,7 +474,7 @@
   background: #323232;
   color: white;
   font-size: 14px;
-  z-index: 10001;
+  z-index: 21050;
   opacity: 0;
   transition: all 0.3s;
 }
@@ -428,14 +513,14 @@
   color: #1a73e8;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .gid-btn-more:hover,
 .gid-btn-collapse:hover {
   background: #e8f0fe;
   border-color: #1a73e8;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .gid-more-count {
@@ -444,4 +529,510 @@
   background: #f1f3f4;
   padding: 2px 8px;
   border-radius: 10px;
+}
+
+/* ==================== 错误日志面板 ==================== */
+.gid-error-panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+.gid-error-panel.visible {
+  display: flex;
+}
+
+.gid-error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fce8e6;
+  border-bottom: 1px solid #f5c6cb;
+}
+
+.gid-error-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #c5221f;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gid-error-count {
+  background: #c5221f;
+  color: white;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.gid-error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gid-btn-clear-errors {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #5f6368;
+}
+
+.gid-btn-clear-errors:hover {
+  background: #f8f9fa;
+}
+
+.gid-btn-back {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.gid-btn-back:hover {
+  background: #1557b0;
+}
+
+.gid-error-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: #fff;
+}
+
+.gid-error-item {
+  background: #fef7f6;
+  border: 1px solid #fce8e6;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.gid-error-item:last-child {
+  margin-bottom: 0;
+}
+
+.gid-error-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.gid-error-category {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.gid-error-category.download {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+.gid-error-category.network {
+  background: #fef7e0;
+  color: #b06000;
+}
+
+.gid-error-category.detection {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.gid-error-category.unknown {
+  background: #f1f3f4;
+  color: #5f6368;
+}
+
+.gid-error-time {
+  font-size: 10px;
+  color: #9aa0a6;
+}
+
+.gid-error-message {
+  color: #c5221f;
+  font-weight: 500;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.gid-error-context {
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 10px;
+  color: #5f6368;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.gid-error-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #5f6368;
+  gap: 12px;
+}
+
+.gid-error-empty-icon {
+  font-size: 40px;
+}
+
+/* 错误日志按钮（在抽屉头部） */
+.gid-btn-errors {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: #fce8e6;
+  color: #c5221f;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 预览按钮（在抽屉头部） */
+.gid-btn-preview {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: #e8f0fe;
+  color: #1a73e8;
+  border: 1px solid #c2d7f7;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.gid-btn-preview:hover {
+  background: #d2e3fc;
+  border-color: #1a73e8;
+}
+
+.gid-btn-errors:hover {
+  background: #f8d7da;
+}
+
+.gid-btn-errors .gid-error-badge {
+  background: #c5221f;
+  color: white;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.gid-btn-errors.no-errors {
+  background: #e6f4ea;
+  color: #137333;
+  border-color: #a8dab5;
+}
+
+.gid-btn-errors.no-errors:hover {
+  background: #ceead6;
+}
+
+/* ==================== 预览面板 ==================== */
+.gid-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 20000;
+  display: none;
+  flex-direction: column;
+  font-family: 'Google Sans', Roboto, sans-serif;
+}
+
+.gid-preview-overlay.visible {
+  display: flex;
+}
+
+/* 工具栏 */
+.gid-preview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+
+.gid-preview-counter {
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.gid-preview-separator {
+  margin: 0 4px;
+  opacity: 0.6;
+}
+
+.gid-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 去水印开关 */
+.gid-preview-watermark-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #aaa;
+  font-size: 13px;
+  transition: color 0.2s;
+}
+
+.gid-preview-watermark-toggle:hover {
+  color: white;
+}
+
+.gid-watermark-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #1a73e8;
+  cursor: pointer;
+}
+
+.gid-watermark-label {
+  user-select: none;
+}
+
+/* 关闭按钮 */
+.gid-preview-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 32px;
+  cursor: pointer;
+  padding: 0 8px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.gid-preview-close:hover {
+  opacity: 1;
+}
+
+/* 主要预览区域 */
+.gid-preview-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  min-height: 0;
+  position: relative;
+}
+
+/* 导航按钮 */
+.gid-preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 50px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  font-size: 36px;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.gid-preview-nav:hover {
+  background: rgba(255, 255, 255, 0.2);
+  opacity: 1;
+}
+
+.gid-preview-prev {
+  left: 20px;
+}
+
+.gid-preview-next {
+  right: 20px;
+}
+
+/* 图片容器 */
+.gid-preview-image-wrapper {
+  position: relative;
+  max-width: calc(100% - 160px);
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gid-preview-image {
+  max-width: 100%;
+  max-height: calc(100vh - 200px);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* 下载按钮（图片右上角外侧） */
+.gid-preview-download {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 44px;
+  height: 44px;
+  background: #1a73e8;
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.gid-preview-download:hover {
+  background: #1557b0;
+  transform: scale(1.1);
+}
+
+.gid-preview-download svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* 底部缩略图条 */
+.gid-preview-thumbnails {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.gid-preview-thumb-track {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.gid-preview-thumb-track::-webkit-scrollbar {
+  height: 6px;
+}
+
+.gid-preview-thumb-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gid-preview-thumb-track::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.gid-preview-thumb-item {
+  flex-shrink: 0;
+  width: 80px;
+  height: 60px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  opacity: 0.6;
+  transition: all 0.2s;
+}
+
+.gid-preview-thumb-item:hover {
+  opacity: 0.9;
+}
+
+.gid-preview-thumb-item.active {
+  border-color: #1a73e8;
+  opacity: 1;
+}
+
+.gid-preview-thumb-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.gid-btn-preview-item.is-opening {
+  background: #1a73e8;
+  color: white;
+}
+
+.gid-btn-preview-item.is-opening svg {
+  opacity: 0;
+}
+
+.gid-btn-preview-item.is-opening::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top-color: #fff;
+  animation: gid-spin 0.8s linear infinite;
+}
+
+.gid-preview-download.is-loading {
+  background: #1557b0;
+  cursor: default;
+  pointer-events: none;
+}
+
+.gid-preview-download.is-loading svg {
+  opacity: 0;
+}
+
+.gid-preview-download.is-loading::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top-color: #fff;
+  animation: gid-spin 0.8s linear infinite;
+}
+
+@keyframes gid-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

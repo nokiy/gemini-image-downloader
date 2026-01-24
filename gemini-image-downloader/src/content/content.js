@@ -10,7 +10,7 @@
   }
   window.__geminiImageDownloaderInjected = true;
 
-  console.log('[GID] Initializing v1.1.0.16...');
+  console.log('[GID] Initializing v1.2.0.25...');
 
   function getFallbackConfig() {
     const selectors = window.GeminiSelectors || {};
@@ -127,6 +127,45 @@
     };
   }
 
+  function refreshImagesAfterNavigation() {
+    const detection = window.GeminiImageDetection;
+    const stateManager = window.GeminiImageState;
+    if (!detection?.detectImages || !stateManager?.updateImages) return;
+
+    const run = () => {
+      const images = detection.detectImages();
+      stateManager.updateImages(images);
+    };
+
+    setTimeout(run, 600);
+    setTimeout(run, 1800);
+  }
+
+  function handleRouteChange() {
+    const stateManager = window.GeminiImageState;
+    if (stateManager?.clearState) {
+      stateManager.clearState();
+    }
+    refreshImagesAfterNavigation();
+  }
+
+  function setupRouteWatcher() {
+    if (window.__gidRouteWatcher) return;
+
+    let lastUrl = location.href;
+    const check = () => {
+      const current = location.href;
+      if (current !== lastUrl) {
+        lastUrl = current;
+        handleRouteChange();
+      }
+    };
+
+    window.__gidRouteWatcher = setInterval(check, 800);
+    window.addEventListener('popstate', check);
+    window.addEventListener('hashchange', check);
+  }
+
   if (chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request?.action === 'ping') {
@@ -186,9 +225,28 @@
       console.log('[GID] Observer detected:', images.length, 'images');
       updateImages(images);
     });
+
+    setupRouteWatcher();
   } else {
     console.error('[GID] Detection or State module not found');
   }
 
   console.log('[GID] Initialized successfully');
+
+  // 诊断：测试与 Service Worker 的通信
+  setTimeout(() => {
+    if (chrome?.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ action: 'downloadPing' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[GID] Service Worker ping failed:', chrome.runtime.lastError.message);
+        } else if (response?.ok) {
+          console.log('[GID] Service Worker is ready');
+        } else {
+          console.warn('[GID] Service Worker responded but not ok:', response);
+        }
+      });
+    } else {
+      console.error('[GID] chrome.runtime.sendMessage not available');
+    }
+  }, 2000);
 })();

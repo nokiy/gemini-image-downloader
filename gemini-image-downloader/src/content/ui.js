@@ -1,8 +1,7 @@
-// [IN]: State module, Detection module, Selectors config / 状态模块、检测模块、选择器配置
-// [OUT]: UI rendering functions, initUI() / UI 渲染函数、初始化函数
-// [POS]: src/content/ui.js - UI rendering layer / UI 渲染层
-// Protocol: When updating me, sync this header + parent folder's .folder.md
-// 协议：更新本文件时，同步更新此头注释及所属文件夹的 .folder.md
+// [IN]: State module, Detection module, Selectors config, ErrorLogger, Preview module, WatermarkRemover / 状态模块、检测模块、选择器配置、错误日志、预览模块、去水印模块
+// [OUT]: UI rendering functions, initUI(), error panel functions, preview button, watermark toggle / UI 渲染函数、初始化函数、错误面板函数、预览按钮、去水印开关
+// [POS]: src/content/ui.js - UI rendering layer with error log visualization, preview and watermark removal / UI 渲染层（含错误日志可视化、预览和去水印功能）
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 /**
  * Gemini Image Downloader UI Module
@@ -40,6 +39,248 @@ function getLogger() {
   };
 }
 
+function getViewportWidth() {
+  return Math.max(document.documentElement?.clientWidth || 0, window.innerWidth || 0);
+}
+
+function isElementVisible(el) {
+  if (!el || !el.getBoundingClientRect) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function isElementInFixedLayer(el) {
+  let current = el;
+  let depth = 0;
+  while (current && current !== document.documentElement && depth < 6) {
+    const style = window.getComputedStyle(current);
+    if (style.position === 'fixed' || style.position === 'sticky') {
+      return true;
+    }
+    current = current.parentElement;
+    depth += 1;
+  }
+  return false;
+}
+
+function getPrimaryHeader() {
+  const selectors = getUISelectors();
+  const selectorList = [
+    selectors.header,
+    'header',
+    '[role="banner"]',
+    '[data-test-id*="header"]',
+    '[data-test-id*="topbar"]',
+    '[data-test-id*="app-bar"]',
+    '[data-test-id*="toolbar"]'
+  ].filter(Boolean);
+  const headerSelector = Array.from(new Set(selectorList)).join(',');
+  const headers = Array.from(document.querySelectorAll(headerSelector));
+  if (headers.length === 0) return null;
+
+  const viewportWidth = getViewportWidth();
+  let best = null;
+  let bestScore = Infinity;
+
+  for (const header of headers) {
+    if (!header.isConnected) continue;
+    const rect = header.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+
+    const topPenalty = Math.max(0, rect.top);
+    const widthPenalty = viewportWidth > 0 ? Math.max(0, viewportWidth - rect.width) : 0;
+    const score = topPenalty * 2 + widthPenalty;
+
+    if (score < bestScore) {
+      best = header;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function pickTopRightElement(elements) {
+  const viewportWidth = getViewportWidth();
+  let best = null;
+  let bestScore = Infinity;
+
+  for (const el of elements) {
+    if (!isElementVisible(el)) continue;
+    const rect = el.getBoundingClientRect();
+    const topPenalty = Math.max(0, rect.top);
+    const rightPenalty = viewportWidth > 0 ? Math.max(0, viewportWidth - rect.right) : 0;
+    const score = topPenalty * 2 + rightPenalty;
+
+    if (score < bestScore) {
+      best = el;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function pickRightmostElement(elements) {
+  let best = null;
+  let bestRight = -Infinity;
+  let bestTop = Infinity;
+
+  for (const el of elements) {
+    if (!isElementVisible(el)) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (rect.right > bestRight || (rect.right === bestRight && rect.top < bestTop)) {
+      best = el;
+      bestRight = rect.right;
+      bestTop = rect.top;
+    }
+  }
+
+  return best;
+}
+
+function pickActionAnchorFromCandidates(candidates) {
+  if (!candidates || candidates.length === 0) return null;
+
+  const rightmost = pickRightmostElement(candidates);
+  if (!rightmost) return pickTopRightElement(candidates);
+
+  const rightRect = rightmost.getBoundingClientRect();
+  const viewportWidth = getViewportWidth();
+  const minRight = viewportWidth > 0 ? viewportWidth * 0.72 : 0;
+
+  const rowCandidates = candidates.filter((el) => {
+    if (!isElementVisible(el)) return false;
+    const rect = el.getBoundingClientRect();
+    return Math.abs(rect.top - rightRect.top) <= 8;
+  });
+
+  const rightSideRow = rowCandidates.filter((el) => {
+    const rect = el.getBoundingClientRect();
+    return rect.right >= minRight;
+  });
+
+  const scoped = rightSideRow.length > 0 ? rightSideRow : rowCandidates;
+  return pickLeftmostElement(scoped) || rightmost;
+}
+
+function pickLeftmostElement(elements) {
+  let best = null;
+  let bestLeft = Infinity;
+
+  for (const el of elements) {
+    if (!isElementVisible(el)) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (rect.left < bestLeft) {
+      best = el;
+      bestLeft = rect.left;
+    }
+  }
+
+  return best;
+}
+
+function getTopRightActionCandidates() {
+  const ids = getExtensionIds();
+  const excludedSelector = `#${ids.drawerId}, #${ids.overlayId}, #${ids.iconId}`;
+  const viewportWidth = getViewportWidth();
+  const topLimit = 160;
+  const minRight = viewportWidth > 0 ? viewportWidth * 0.72 : 0;
+
+  return Array.from(document.querySelectorAll('button, [role="button"], a'))
+    .filter((el) => {
+      if (!isElementVisible(el)) return false;
+      if (excludedSelector && el.closest(excludedSelector)) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      if (rect.top < -10 || rect.top > topLimit) return false;
+      if (viewportWidth > 0 && rect.right < minRight) return false;
+      return true;
+    });
+}
+
+function getHeaderActionCandidates() {
+  const ids = getExtensionIds();
+  const excludedSelector = `#${ids.drawerId}, #${ids.overlayId}, #${ids.iconId}`;
+  const viewportWidth = getViewportWidth();
+  const topLimit = 160;
+  const minRight = viewportWidth > 0 ? viewportWidth * 0.72 : 0;
+
+  const headers = new Set([
+    ...Array.from(document.querySelectorAll('header, [role="banner"]')),
+    getPrimaryHeader()
+  ].filter(Boolean));
+
+  const candidates = [];
+  const headerMap = new Map();
+
+  headers.forEach((header) => {
+    if (!isElementVisible(header)) return;
+    const headerCandidates = Array.from(header.querySelectorAll('button, [role="button"], a'))
+      .filter((el) => {
+        if (!isElementVisible(el)) return false;
+        if (excludedSelector && el.closest(excludedSelector)) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        if (rect.top < -10 || rect.top > topLimit) return false;
+        if (viewportWidth > 0 && rect.right < minRight) return false;
+        return true;
+      });
+
+    if (headerCandidates.length > 0) {
+      headerMap.set(header, headerCandidates);
+      candidates.push(...headerCandidates);
+    }
+  });
+
+  return { candidates, headerMap };
+}
+
+function findHeaderActionContainer() {
+  const anchor = findHeaderActionAnchor();
+  return anchor?.parentElement || null;
+}
+
+function findHeaderActionAnchor() {
+  const avatar = findUserAvatar();
+  const headerCandidates = getHeaderActionCandidates();
+  if (headerCandidates.candidates.length > 0) {
+    let scoped = headerCandidates.candidates;
+    if (avatar) {
+      const avatarHeader = avatar.closest?.('header, [role="banner"]');
+      if (avatarHeader && headerCandidates.headerMap.has(avatarHeader)) {
+        scoped = headerCandidates.headerMap.get(avatarHeader);
+      }
+    } else if (headerCandidates.headerMap.size > 0) {
+      let bestHeader = null;
+      let bestCount = -1;
+      for (const [header, items] of headerCandidates.headerMap.entries()) {
+        if (!isElementVisible(header)) continue;
+        if (items.length > bestCount) {
+          bestHeader = header;
+          bestCount = items.length;
+        }
+      }
+      if (bestHeader && headerCandidates.headerMap.has(bestHeader)) {
+        scoped = headerCandidates.headerMap.get(bestHeader);
+      }
+    }
+
+    const anchor = pickActionAnchorFromCandidates(scoped);
+    if (anchor) return anchor;
+  }
+
+  const fixedCandidates = getTopRightActionCandidates().filter(isElementInFixedLayer);
+  if (fixedCandidates.length > 0) {
+    const anchor = pickActionAnchorFromCandidates(fixedCandidates);
+    if (anchor) return anchor;
+  }
+
+  return null;
+}
+
 // 使用 getter 函数获取 ID，避免模块加载顺序问题
 function getIconId() {
   return getExtensionIds().iconId;
@@ -49,6 +290,157 @@ function getDrawerId() {
 }
 function getOverlayId() {
   return getExtensionIds().overlayId;
+}
+
+const DOWNLOAD_PING_TIMEOUT_MS = 1500;  // 增加到 1.5 秒，给 Service Worker 更多唤醒时间
+const DOWNLOAD_MESSAGE_TIMEOUT_MS = 60000;  // 增加到 60 秒，支持大批量下载
+const DOWNLOAD_SINGLE_MESSAGE_TIMEOUT_MS = 20000;
+const FALLBACK_DOWNLOAD_PREFIX = 'Gemini_Image';
+const MIME_EXTENSION_MAP = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg'
+};
+
+function createRuntimeError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function getImageElementForUrl(url) {
+  const stateManager = getStateManager();
+  const images = stateManager?.getState?.().images;
+  if (!Array.isArray(images)) return null;
+  const match = images.find(img => img?.url === url);
+  return match?.element || null;
+}
+
+function getImageElementMap() {
+  const stateManager = getStateManager();
+  const images = stateManager?.getState?.().images || [];
+  const map = new Map();
+  images.forEach((img) => {
+    if (img?.url) {
+      map.set(img.url, img.element || null);
+    }
+  });
+  return map;
+}
+
+function sendRuntimeMessageWithTimeout(message, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(createRuntimeError('timeout', 'runtime message timeout'));
+    }, timeoutMs);
+
+    chrome.runtime.sendMessage(message, (response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+
+      if (chrome.runtime.lastError) {
+        const errMsg = chrome.runtime.lastError.message || 'runtime sendMessage failed';
+        reject(createRuntimeError('send_failed', errMsg));
+        return;
+      }
+
+      if (!response) {
+        reject(createRuntimeError('no_response', 'runtime message no response'));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
+}
+
+async function ensureDownloadServiceReady() {
+  // 尝试多次 ping，给 Service Worker 更多唤醒机会
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await sendRuntimeMessageWithTimeout({ action: 'downloadPing' }, DOWNLOAD_PING_TIMEOUT_MS);
+      if (response?.ok) {
+        return true;
+      }
+    } catch (error) {
+      getLogger().warn('UI', `Download service ping attempt ${attempt}/${maxAttempts} failed`, { error: error?.message });
+      if (attempt < maxAttempts) {
+        // 等待一小段时间后重试
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+  }
+  return false;
+}
+
+function getExtensionFromContentType(contentType) {
+  if (!contentType) return null;
+  const type = contentType.split(';')[0].trim().toLowerCase();
+  return MIME_EXTENSION_MAP[type] || null;
+}
+
+function getExtensionFromUrl(url) {
+  if (!url) return null;
+  try {
+    const pathname = new URL(url).pathname;
+    const match = pathname.match(/\.([a-z0-9]+)$/i);
+    return match ? match[1].toLowerCase() : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function downloadImageViaFetch(url, baseName, index) {
+  const response = await fetch(url, {
+    credentials: 'include',
+    cache: 'no-cache'
+  });
+  if (!response.ok) {
+    throw new Error(`Status ${response.status}`);
+  }
+  const blob = await response.blob();
+  const ext = getExtensionFromContentType(blob.type) || getExtensionFromUrl(url) || 'png';
+  const suffix = typeof index === 'number' ? `_${String(index + 1).padStart(2, '0')}` : '';
+  const filename = `${baseName}${suffix}.${ext}`;
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.rel = 'noopener';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+async function downloadBatchFallback(urls) {
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < urls.length; i++) {
+    updateStatusBar(`正在下载 ${i + 1}/${urls.length}...`, 'downloading');
+    try {
+      await downloadImageViaFetch(urls[i], FALLBACK_DOWNLOAD_PREFIX, i);
+      successCount++;
+    } catch (error) {
+      failCount++;
+      getLogger().warn('UI', 'Fallback download failed', { error: error?.message, url: urls[i] });
+    }
+  }
+
+  return { successCount, failCount };
 }
 
 // 任务队列：最多 2 个任务（1 个批量 + 1 个单个）
@@ -160,28 +552,34 @@ async function processSingleQueue() {
 function findUserAvatar() {
   const logger = getLogger();
   const selectors = getUISelectors();
+  const viewportWidth = getViewportWidth();
+  const topLimit = 120;
   
   // 使用配置中的用户头像选择器列表
   const avatarSelectors = selectors.userAvatar;
+  const candidates = [];
 
   for (const selector of avatarSelectors) {
     try {
-      const el = document.querySelector(selector);
-      if (el) {
-        logger.debug('UI', 'Found user avatar via selector', { selector });
-        return el;
-      }
+      const matches = Array.from(document.querySelectorAll(selector));
+      matches.forEach((el) => {
+        if (!isElementVisible(el)) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        if (rect.top < -10 || rect.top > topLimit) return;
+        if (viewportWidth > 0 && rect.right < viewportWidth * 0.7) return;
+        candidates.push(el);
+      });
     } catch (e) {
       // :has 可能不被支持，继续尝试下一个
       logger.debug('UI', 'Selector not supported', { selector, error: e.message });
     }
   }
 
-  // 备用：查找 header 中最右边的按钮（使用配置中的选择器）
-  const headerButtons = document.querySelectorAll(selectors.headerButtons);
-  if (headerButtons.length > 0) {
-    logger.debug('UI', 'Found user avatar via fallback (last header button)');
-    return headerButtons[headerButtons.length - 1];
+  const picked = pickTopRightElement(candidates);
+  if (picked) {
+    logger.debug('UI', 'Found user avatar via selector', { selector: 'top-right candidates' });
+    return picked;
   }
 
   logger.debug('UI', 'User avatar not found');
@@ -194,39 +592,56 @@ function findUserAvatar() {
 function findNavbar() {
   const logger = getLogger();
   const selectors = getUISelectors();
+  const header = getPrimaryHeader();
 
   // 优先通过用户头像定位
   const avatar = findUserAvatar();
   if (avatar) {
-    // 返回头像的父容器
-    let parent = avatar.parentElement;
-    // 向上找到包含多个子元素的容器
-    while (parent && parent.children.length < 2) {
-      parent = parent.parentElement;
+    const avatarButton = avatar.closest?.('button') || avatar;
+    let container = avatarButton.closest('[role="toolbar"], [role="navigation"], nav, header')
+      || avatarButton.parentElement
+      || avatar.parentElement;
+    if (container && container.tagName === 'BUTTON' && container.parentElement) {
+      container = container.parentElement;
     }
-    if (parent) {
-      logger.info('UI', 'Found navbar via avatar', { element: parent.tagName });
-      return parent;
+    if (container) {
+      logger.info('UI', 'Found navbar via avatar', { element: container.tagName });
+      return container;
     }
   }
 
   // 使用配置中的导航栏选择器列表
   const navbarSelectors = selectors.navbar;
+  const candidates = [];
 
   for (const selector of navbarSelectors) {
     try {
-      const el = document.querySelector(selector);
-      if (el) {
-        logger.info('UI', 'Found navbar via selector', { selector });
-        return el.parentElement || el;
+      const matches = Array.from(document.querySelectorAll(selector));
+      for (const match of matches) {
+        let candidate = match;
+        if (match.closest) {
+          const closest = match.closest('[role="toolbar"], [role="navigation"], nav, header');
+          if (closest) {
+            candidate = closest;
+          }
+        }
+        if (header && !header.contains(candidate)) {
+          continue;
+        }
+        candidates.push(candidate);
       }
     } catch (e) {
       logger.debug('UI', 'Navbar selector error', { selector, error: e.message });
     }
   }
 
+  const picked = pickTopRightElement(candidates);
+  if (picked) {
+    logger.info('UI', 'Found navbar via selector', { element: picked.tagName });
+    return picked;
+  }
+
   // 备用：查找 header 下的最后一个子元素（使用配置中的选择器）
-  const header = document.querySelector(selectors.header);
   if (header) {
     const children = header.querySelectorAll(selectors.headerChildren);
     if (children.length > 0) {
@@ -250,8 +665,60 @@ function findNavbar() {
     return header;
   }
 
-  logger.warn('UI', 'Navbar not found');
+  // 使用 debug 级别，避免在 Chrome 扩展错误面板中显示
+  logger.debug('UI', 'Navbar not found, will use fixed position fallback');
   return null;
+}
+
+function placeIconInNavbar(icon) {
+  // Deprecated: Gemini header DOM is frequently re-rendered (SPA navigation),
+  // so DOM-inserting the icon into the navbar is unstable. Keep the icon as a
+  // fixed overlay anchored to the top-right action group instead.
+  void icon;
+  return false;
+}
+
+function placeIconFixed(icon) {
+  if (icon?.parentElement !== document.body) {
+    document.body.appendChild(icon);
+  }
+  icon.classList.add('gid-icon-fixed');
+  icon.classList.remove('gid-icon-navbar');
+}
+
+function updateFixedIconPosition(icon) {
+  if (!icon) return false;
+
+  const anchor = findHeaderActionAnchor();
+  if (!anchor) {
+    // Reset to CSS defaults (top-right) when the header action anchor is missing.
+    icon.style.left = '';
+    icon.style.top = '';
+    icon.style.right = '';
+    icon.style.bottom = '';
+    return false;
+  }
+
+  const rect = anchor.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  const ICON_SIZE = 40;
+  const GAP = 12;
+  const top = Math.round(rect.top + (rect.height - ICON_SIZE) / 2);
+  const left = Math.round(rect.left - ICON_SIZE - GAP);
+
+  icon.style.left = `${Math.max(8, left)}px`;
+  icon.style.top = `${Math.max(8, top)}px`;
+  icon.style.right = 'auto';
+  icon.style.bottom = 'auto';
+  return true;
+}
+
+function ensureIconPlacement() {
+  const icon = document.getElementById(getIconId());
+  if (!icon) return false;
+  placeIconFixed(icon);
+  return updateFixedIconPosition(icon);
 }
 
 /**
@@ -267,10 +734,8 @@ function createIcon() {
   icon.id = getIconId();
   icon.className = 'gid-icon';
   icon.innerHTML = `
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4C9.11 4 6.6 5.64 5.35 8.04C2.34 8.36 0 10.91 0 14C0 17.31 2.69 20 6 20H19C21.76 20 24 17.76 24 15C24 12.36 21.95 10.22 19.35 10.04ZM17 13L12 18L7 13H10V10H14V13H17Z"/>
     </svg>
     <span class="gid-badge">0</span>
   `;
@@ -279,37 +744,8 @@ function createIcon() {
     e.stopPropagation();
     toggleDrawer();
   });
-
-  const logger = getLogger();
-  const selectors = getUISelectors();
-  
-  // 尝试注入到导航栏
-  const navbar = findNavbar();
-  if (navbar) {
-    // 使用配置中的导航栏用户头像选择器列表
-    let userAvatar = null;
-    for (const selector of selectors.navbarUserAvatar) {
-      try {
-        userAvatar = navbar.querySelector(selector);
-        if (userAvatar) break;
-      } catch (e) {
-        // 选择器可能不支持，继续
-      }
-    }
-    
-    if (userAvatar && userAvatar.parentElement) {
-      userAvatar.parentElement.insertBefore(icon, userAvatar);
-    } else {
-      navbar.appendChild(icon);
-    }
-    icon.classList.add('gid-icon-navbar');
-    logger.info('UI', 'Icon injected into navbar');
-  } else {
-    // 回退：使用 fixed 定位
-    document.body.appendChild(icon);
-    icon.classList.add('gid-icon-fixed');
-    logger.info('UI', 'Icon using fixed position (navbar not found)');
-  }
+  placeIconFixed(icon);
+  updateFixedIconPosition(icon);
 
   return icon;
 }
@@ -319,16 +755,16 @@ function createIcon() {
  */
 function updateIcon(state) {
   const logger = getLogger();
-  const icon = document.getElementById(getIconId());
-  if (!icon) {
-    logger.debug('UI', 'updateIcon: icon not found');
-    return;
-  }
+  const icon = document.getElementById(getIconId()) || createIcon();
+  if (!icon) return;
 
   // 始终显示图标（只要有图片时才显示，或者始终显示）
   // 根据需求：检测到图片时显示
   const shouldShow = state.ui.isIconVisible;
   icon.style.display = shouldShow ? 'flex' : 'none';
+  if (shouldShow) {
+    updateFixedIconPosition(icon);
+  }
   
   logger.debug('UI', 'updateIcon', { 
     shouldShow, 
@@ -368,10 +804,23 @@ function createDrawer() {
     <div class="gid-drawer-header">
       <div class="gid-drawer-title">
         <span class="gid-title-text">Gemini Images</span>
-        <button class="gid-btn-close" aria-label="关闭">×</button>
+        <div class="gid-title-actions">
+          <button class="gid-btn gid-btn-preview" title="预览图片">
+            <span>预览</span>
+          </button>
+          <button class="gid-btn gid-btn-errors no-errors" title="查看错误日志">
+            <span>日志</span>
+            <span class="gid-error-badge" style="display:none">0</span>
+          </button>
+          <button class="gid-btn-close" aria-label="关闭">×</button>
+        </div>
       </div>
       <div class="gid-drawer-actions">
         <span class="gid-drawer-count">0 张图片</span>
+        <label class="gid-watermark-toggle" title="下载时去除 Gemini 水印">
+          <input type="checkbox" class="gid-remove-watermark-checkbox">
+          <span>去水印</span>
+        </label>
         <button class="gid-btn gid-btn-select-all">全选</button>
         <button class="gid-btn gid-btn-primary gid-btn-batch" disabled>
           批量下载
@@ -386,12 +835,54 @@ function createDrawer() {
         <div class="gid-empty-text">未检测到图片</div>
       </div>
     </div>
+    <div class="gid-error-panel">
+      <div class="gid-error-header">
+        <div class="gid-error-title">
+          <span>⚠️ 错误日志</span>
+          <span class="gid-error-count">0</span>
+        </div>
+        <div class="gid-error-actions">
+          <button class="gid-btn-clear-errors">清空</button>
+          <button class="gid-btn-back">返回</button>
+        </div>
+      </div>
+      <div class="gid-error-list"></div>
+    </div>
   `;
 
   // 事件绑定
   drawer.querySelector('.gid-btn-close').addEventListener('click', closeDrawer);
   drawer.querySelector('.gid-btn-select-all').addEventListener('click', handleSelectAll);
   drawer.querySelector('.gid-btn-batch').addEventListener('click', handleBatchDownload);
+  drawer.querySelector('.gid-btn-preview').addEventListener('click', handleOpenPreview);
+  drawer.querySelector('.gid-btn-errors').addEventListener('click', showErrorPanel);
+  drawer.querySelector('.gid-btn-back').addEventListener('click', hideErrorPanel);
+  drawer.querySelector('.gid-btn-clear-errors').addEventListener('click', clearErrorLogs);
+
+  // 去水印复选框事件
+  const watermarkCheckbox = drawer.querySelector('.gid-remove-watermark-checkbox');
+  if (watermarkCheckbox) {
+    const stateManager = getStateManager();
+    const defaultChecked = typeof stateManager?.getRemoveWatermark === 'function'
+      ? stateManager.getRemoveWatermark()
+      : true;
+    watermarkCheckbox.checked = defaultChecked;
+    if (window.GeminiImagePreview?.setRemoveWatermark) {
+      window.GeminiImagePreview.setRemoveWatermark(defaultChecked);
+    }
+  }
+  if (watermarkCheckbox) {
+    watermarkCheckbox.addEventListener('change', (e) => {
+      const stateManager = getStateManager();
+      if (stateManager) {
+        stateManager.setRemoveWatermark(e.target.checked);
+        // 同步到预览面板
+        if (window.GeminiImagePreview) {
+          window.GeminiImagePreview.setRemoveWatermark(e.target.checked);
+        }
+      }
+    });
+  }
 
   // ESC 关闭
   document.addEventListener('keydown', (e) => {
@@ -405,6 +896,12 @@ function createDrawer() {
 
   document.body.appendChild(overlay);
   document.body.appendChild(drawer);
+
+  // 初始化错误日志按钮状态
+  updateErrorButton();
+
+  // 监听错误日志事件
+  window.addEventListener('gid:error-logged', updateErrorButton);
 
   return drawer;
 }
@@ -450,6 +947,12 @@ function renderImageList(state) {
           <div class="gid-image-thumb">
             <img src="${thumbUrl}" alt="Image ${index + 1}" class="gid-thumb-image">
           </div>
+          <button class="gid-btn gid-btn-preview-item" data-index="${index}" title="预览大图">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M2 12C3.5 8 7 6 12 6C17 6 20.5 8 22 12C20.5 16 17 18 12 18C7 18 3.5 16 2 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </button>
           <div class="gid-image-info">
             <span class="gid-image-index">#${index + 1}</span>
           </div>
@@ -503,9 +1006,20 @@ function renderImageList(state) {
         handleSingleDownload(url);
       });
 
+      // 预览大图
+      const previewBtn = item.querySelector('.gid-btn-preview-item');
+      if (previewBtn) {
+        previewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const index = Number(previewBtn.dataset.index) || 0;
+          handleOpenPreviewAtIndex(displayImages, index, previewBtn);
+        });
+      }
+
       // 点击整个 item 切换选中
       item.addEventListener('click', (e) => {
         if (e.target.closest('.gid-btn-download')) return;
+        if (e.target.closest('.gid-btn-preview-item')) return;
         if (stateManager) {
           stateManager.toggleSelect(url);
         }
@@ -644,44 +1158,148 @@ function handleSelectAll() {
 }
 
 /**
- * 处理单个下载 (加入队列)
+ * 打开预览面板
+ */
+function handleOpenPreview() {
+  const stateManager = getStateManager();
+  if (!stateManager) return;
+
+  const state = stateManager.getState();
+  if (state.displayImages.length === 0) {
+    showToast('没有可预览的图片', 'warning');
+    return;
+  }
+
+  // 关闭抽屉
+  closeDrawer();
+
+  // 打开预览面板
+  if (window.GeminiImagePreview) {
+    showToast('正在打开预览...', 'warning');
+    window.GeminiImagePreview.open(state.displayImages, 0);
+    closeDrawer();
+  } else {
+    showToast('预览模块未加载', 'error');
+  }
+}
+
+function handleOpenPreviewAtIndex(images, index, sourceButton) {
+  if (!images || images.length === 0) {
+    showToast('没有可预览的图片', 'warning');
+    return;
+  }
+
+  if (window.GeminiImagePreview) {
+    showToast('正在打开预览...', 'warning');
+    if (sourceButton) {
+      sourceButton.classList.add('is-opening');
+    }
+    window.GeminiImagePreview.open(images, index);
+    closeDrawer();
+    if (sourceButton) {
+      setTimeout(() => {
+        sourceButton.classList.remove('is-opening');
+      }, 800);
+    }
+  } else {
+    showToast('预览模块未加载', 'error');
+    if (sourceButton) {
+      sourceButton.classList.remove('is-opening');
+    }
+  }
+}
+
+/**
+ * 处理单个下载 (加入队列) - 支持去水印
  */
 function handleSingleDownload(url) {
+  const stateManager = getStateManager();
+  const shouldRemoveWatermark = stateManager?.getRemoveWatermark() || false;
+
   const added = addSingleTask(async () => {
-    // 更新状态栏：下载中
+    // 检查是否需要去水印
+    if (shouldRemoveWatermark && window.GeminiWatermarkRemover) {
+      updateStatusBar('正在去水印下载...', 'downloading');
+      showToast('正在去水印下载...', 'warning');
+      try {
+        const sourceElement = getImageElementForUrl(url);
+        const result = await window.GeminiWatermarkRemover.removeWatermark(url, {
+          element: sourceElement
+        });
+        if (result.success) {
+          // 触发下载
+          const objectUrl = URL.createObjectURL(result.blob);
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = `${FALLBACK_DOWNLOAD_PREFIX}_nowm.png`;
+          link.rel = 'noopener';
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          updateStatusBar('去水印下载完成', 'success');
+          showToast('去水印下载完成');
+        } else {
+          throw new Error(result.error || '去水印失败');
+        }
+      } catch (error) {
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(error, {
+            url,
+            type: 'single-download-watermark-removal',
+            error: error.message
+          });
+          updateErrorButton();
+        }
+        updateStatusBar('去水印下载失败: ' + error.message, 'error');
+        showToast('去水印下载失败: ' + error.message, 'error');
+      }
+      return;
+    }
+
+    // 普通下载（无去水印）
     updateStatusBar('正在下载图片...', 'downloading');
-    
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({
+    showToast('正在下载图片...', 'warning');
+
+    try {
+      const response = await sendRuntimeMessageWithTimeout({
         action: 'downloadSingle',
         url: url
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          const error = new Error(chrome.runtime.lastError.message);
-          if (window.GeminiImageErrorLogger) {
-            window.GeminiImageErrorLogger.logDownloadError(error, {
-              url,
-              type: 'single-download',
-              error: chrome.runtime.lastError.message
-            });
-          }
-          updateStatusBar('下载失败', 'error');
-        } else if (response && response.success) {
-          updateStatusBar('下载完成', 'success');
-        } else {
-          const error = new Error(response?.error || 'Unknown download error');
-          if (window.GeminiImageErrorLogger) {
-            window.GeminiImageErrorLogger.logDownloadError(error, {
-              url,
-              type: 'single-download',
-              response
-            });
-          }
-          updateStatusBar('下载失败', 'error');
+      }, DOWNLOAD_SINGLE_MESSAGE_TIMEOUT_MS);
+
+      if (response && response.success) {
+        updateStatusBar('下载完成', 'success');
+        showToast('下载完成');
+      } else {
+        const error = new Error(response?.error || 'Unknown download error');
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(error, {
+            url,
+            type: 'single-download',
+            response
+          });
         }
-        resolve();
-      });
-    });
+        throw error;
+      }
+    } catch (error) {
+      try {
+        updateStatusBar('后台下载失败，改为直接下载...', 'downloading');
+        await downloadImageViaFetch(url, FALLBACK_DOWNLOAD_PREFIX);
+        updateStatusBar('下载完成', 'success');
+        showToast('下载完成');
+      } catch (fallbackError) {
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(fallbackError, {
+            url,
+            type: 'single-download-fallback',
+            error: fallbackError.message
+          });
+        }
+        updateStatusBar('下载失败', 'error');
+        showToast('下载失败: ' + fallbackError.message, 'error');
+      }
+    }
   });
   
   if (added) {
@@ -690,7 +1308,127 @@ function handleSingleDownload(url) {
 }
 
 /**
- * 处理批量下载 (加入队列)
+ * 将 Blob 转换为 Data URL
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * 批量下载并去水印（打包成 ZIP）
+ * @param {string[]} urls - 图片 URL 列表
+ */
+async function downloadBatchWithWatermarkRemoval(urls) {
+  const processedImages = new Array(urls.length).fill(null);
+  let failCount = 0;
+
+  const total = urls.length;
+  const elementMap = getImageElementMap();
+  const hardware = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 0 : 0;
+  const desiredConcurrency = hardware > 0 ? Math.floor(hardware / 4) : 2;
+  const concurrency = Math.max(1, Math.min(3, desiredConcurrency || 2, total));
+  let cursor = 0;
+  let completed = 0;
+
+  const nextIndex = () => {
+    if (cursor >= total) return null;
+    const current = cursor;
+    cursor += 1;
+    return current;
+  };
+
+  updateStatusBar(`正在去水印处理 0/${total}...`, 'downloading');
+
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex();
+      if (index === null) break;
+      const url = urls[index];
+
+      try {
+        const sourceElement = elementMap.get(url) || null;
+        const result = await window.GeminiWatermarkRemover.removeWatermark(url, {
+          element: sourceElement
+        });
+
+        if (result.success) {
+          const dataUrl = await blobToDataUrl(result.blob);
+          const filename = `image_nowm_${String(index + 1).padStart(2, '0')}.png`;
+          processedImages[index] = { dataUrl, filename };
+        } else {
+          throw new Error(result.error || '去水印失败');
+        }
+      } catch (error) {
+        failCount++;
+        getLogger().warn('UI', 'Batch watermark removal failed', { error: error?.message, url });
+
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(error, {
+            url,
+            index,
+            type: 'batch-download-watermark-removal',
+            error: error.message
+          });
+          updateErrorButton();
+        }
+      } finally {
+        completed += 1;
+        updateStatusBar(`正在去水印处理 ${completed}/${total}...`, 'downloading');
+      }
+    }
+  };
+
+  const workers = Array.from({ length: concurrency }, worker);
+  await Promise.all(workers);
+
+  const readyImages = processedImages.filter(Boolean);
+
+  // 第二阶段：打包成 ZIP
+  if (readyImages.length === 0) {
+    updateStatusBar('批量去水印下载失败', 'error');
+    return;
+  }
+
+  updateStatusBar('正在打包 ZIP...', 'packaging');
+
+  try {
+    const response = await sendRuntimeMessageWithTimeout({
+      action: 'packageWatermarkRemovedImages',
+      images: readyImages
+    }, DOWNLOAD_MESSAGE_TIMEOUT_MS);
+
+    if (response && response.success) {
+      if (failCount > 0) {
+        updateStatusBar(`去水印下载完成: ${readyImages.length} 成功, ${failCount} 失败`, 'warning');
+      } else {
+        updateStatusBar(`成功去水印下载 ${readyImages.length} 张图片`, 'success');
+      }
+    } else {
+      throw new Error(response?.error || 'ZIP 打包失败');
+    }
+  } catch (error) {
+    getLogger().error('UI', error, { context: 'packageWatermarkRemovedImages' });
+    if (window.GeminiImageErrorLogger) {
+      window.GeminiImageErrorLogger.logDownloadError(error, {
+        type: 'batch-download-watermark-zip',
+        count: processedImages.length,
+        error: error.message
+      });
+      updateErrorButton();
+    }
+    updateStatusBar('ZIP 打包失败: ' + error.message, 'error');
+  }
+}
+
+/**
+ * 处理批量下载 (加入队列) - 支持去水印
  */
 function handleBatchDownload() {
   console.log('[GID] handleBatchDownload called');
@@ -709,58 +1447,111 @@ function handleBatchDownload() {
   }
 
   const urls = selectedImages.map(img => img.url);
-  console.log('[GID] URLs to download:', urls);
-  getLogger().info('UI', 'Starting batch download', { count: urls.length, urls });
-  
+  const shouldRemoveWatermark = stateManager.getRemoveWatermark() || false;
+  console.log('[GID] URLs to download:', urls.length, 'removeWatermark:', shouldRemoveWatermark);
+  getLogger().info('UI', 'Starting batch download', { count: urls.length, removeWatermark: shouldRemoveWatermark });
+
   const added = addBatchTask(async () => {
-    return new Promise((resolve) => {
-      console.log('[GID] Sending downloadBatch message to service worker');
-      chrome.runtime.sendMessage({
+    // 如果需要去水印，逐张处理
+    if (shouldRemoveWatermark && window.GeminiWatermarkRemover) {
+      await downloadBatchWithWatermarkRemoval(urls);
+      return;
+    }
+
+    // 普通批量下载
+    console.log('[GID] Sending downloadBatch message to service worker');
+    const serviceReady = await ensureDownloadServiceReady();
+    if (!serviceReady) {
+      updateStatusBar('后台未响应，改为逐张下载...', 'downloading');
+      const { successCount, failCount } = await downloadBatchFallback(urls);
+      if (successCount === 0) {
+        // 记录错误日志
+        console.error('[GID] Fallback download all failed');
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(new Error('后台服务未响应，逐张下载也失败'), {
+            urls,
+            count: urls.length,
+            type: 'batch-download-fallback',
+            reason: 'service_not_ready'
+          });
+          updateErrorButton();
+        }
+        updateStatusBar('批量下载失败', 'error');
+      } else if (failCount > 0) {
+        // 部分失败也记录
+        console.warn('[GID] Fallback download partial failure:', failCount);
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(new Error(`部分下载失败: ${failCount}/${urls.length}`), {
+            urls,
+            successCount,
+            failCount,
+            type: 'batch-download-fallback',
+            reason: 'partial_failure'
+          });
+          updateErrorButton();
+        }
+        updateStatusBar(`下载完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
+      } else {
+        updateStatusBar(`成功下载 ${successCount} 张图片`, 'success');
+      }
+      return;
+    }
+
+    try {
+      const timeoutMs = Math.max(DOWNLOAD_MESSAGE_TIMEOUT_MS, urls.length * 4000);
+      const response = await sendRuntimeMessageWithTimeout({
         action: 'downloadBatch',
         urls: urls
-      }, (response) => {
-        console.log('[GID] Received response:', response);
-        console.log('[GID] chrome.runtime.lastError:', chrome.runtime.lastError);
-        if (chrome.runtime.lastError) {
-          const error = new Error(chrome.runtime.lastError.message);
-          if (window.GeminiImageErrorLogger) {
-            window.GeminiImageErrorLogger.logDownloadError(error, {
-              urls,
-              count: urls.length,
-              type: 'batch-download',
-              error: chrome.runtime.lastError.message
-            });
-          }
-          updateStatusBar(`批量下载失败: ${chrome.runtime.lastError.message}`, 'error');
-          resolve();
-          return;
-        }
+      }, timeoutMs);
 
-        // 检查响应结果
-        if (response && response.success !== false) {
-          getLogger().info('UI', 'Batch download completed', { response });
-          const successCount = response.successCount || urls.length;
-          const failCount = response.failCount || 0;
-          if (failCount > 0) {
-            updateStatusBar(`下载完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
-          } else {
-            updateStatusBar(`成功下载 ${successCount} 张图片`, 'success');
-          }
-        } else {
-          const errorMsg = response?.error || '未知错误';
+      console.log('[GID] Received response:', response);
+      if (response && response.success !== false) {
+        getLogger().info('UI', 'Batch download completed', { response });
+          const successCount = response.successCount ?? urls.length;
+          const failCount = response.failCount ?? 0;
+        if (failCount > 0) {
+          // 部分失败时记录日志
           if (window.GeminiImageErrorLogger) {
-            window.GeminiImageErrorLogger.logDownloadError(new Error(errorMsg), {
+            window.GeminiImageErrorLogger.logDownloadError(new Error(`部分下载失败: ${failCount}/${urls.length}`), {
               urls,
-              count: urls.length,
-              type: 'batch-download',
+              successCount,
+              failCount,
+              type: 'batch-download-partial',
               response
             });
+            updateErrorButton();
           }
-          updateStatusBar(`批量下载失败: ${errorMsg}`, 'error');
+          updateStatusBar(`下载完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
+        } else {
+          updateStatusBar(`成功下载 ${successCount} 张图片`, 'success');
         }
-        resolve();
-      });
-    });
+      } else {
+        const errorMsg = response?.error || '未知错误';
+        console.error('[GID] Batch download failed:', errorMsg, response);
+        if (window.GeminiImageErrorLogger) {
+          window.GeminiImageErrorLogger.logDownloadError(new Error(errorMsg), {
+            urls,
+            count: urls.length,
+            type: 'batch-download',
+            response
+          });
+          updateErrorButton();
+        }
+        updateStatusBar(`批量下载失败: ${errorMsg}`, 'error');
+      }
+    } catch (error) {
+      console.error('[GID] Batch download exception:', error);
+      if (window.GeminiImageErrorLogger) {
+        window.GeminiImageErrorLogger.logDownloadError(error, {
+          urls,
+          count: urls.length,
+          type: 'batch-download',
+          error: error.message
+        });
+        updateErrorButton();
+      }
+      updateStatusBar(`批量下载失败: ${error.message}`, 'error');
+    }
   });
 
   if (added) {
@@ -835,33 +1626,25 @@ function setupMessageListener() {
 function initUI() {
   createDrawer();
   setupMessageListener();
-  
-  // 尝试创建图标，如果失败则重试
-  let retryCount = 0;
-  const maxRetries = 10;
-  
-  const logger = getLogger();
-  
-  function tryCreateIcon() {
-    const existingIcon = document.getElementById(getIconId());
-    if (existingIcon) {
-      logger.debug('UI', 'Icon already exists');
-      return;
-    }
-    
-    const navbar = findNavbar();
-    if (navbar || retryCount >= maxRetries) {
-      createIcon();
-      setupStateListeners();
-    } else {
-      retryCount++;
-      logger.debug('UI', `Navbar not found, retry ${retryCount}/${maxRetries}...`);
-      setTimeout(tryCreateIcon, 500);
-    }
+
+  // Create once; Gemini is an SPA and may re-render the header at any time.
+  // Keep a lightweight watcher to re-position/re-create the icon when needed.
+  createIcon();
+  setupStateListeners();
+
+  if (!window.__gidIconPlacementTimer) {
+    const tick = () => {
+      const icon = document.getElementById(getIconId()) || createIcon();
+      if (!icon) return;
+      ensureIconPlacement();
+    };
+
+    window.__gidIconPlacementTimer = setInterval(tick, 1000);
+    window.addEventListener('resize', tick, { passive: true });
+    tick();
   }
-  
-  tryCreateIcon();
-  logger.info('UI', 'UI initialization started');
+
+  getLogger().info('UI', 'UI initialization started');
 }
 
 /**
@@ -911,12 +1694,12 @@ function setupStateListeners() {
 function updateSelectionUI(state) {
   const { selectedUrls } = state;
   const items = document.querySelectorAll('.gid-image-item');
-  
+
   items.forEach(item => {
     const url = item.dataset.url;
     const checkbox = item.querySelector('input[type="checkbox"]');
     const isSelected = selectedUrls.has(url);
-    
+
     if (isSelected) {
       item.classList.add('selected');
       if (checkbox) checkbox.checked = true;
@@ -925,9 +1708,156 @@ function updateSelectionUI(state) {
       if (checkbox) checkbox.checked = false;
     }
   });
-  
+
   // 更新头部信息
   updateHeaderInfo(state);
+}
+
+/* ==================== 错误日志面板功能 ==================== */
+
+/**
+ * 显示错误日志面板
+ */
+async function showErrorPanel() {
+  const drawer = document.getElementById(getDrawerId());
+  if (!drawer) return;
+
+  const drawerBody = drawer.querySelector('.gid-drawer-body');
+  const errorPanel = drawer.querySelector('.gid-error-panel');
+
+  if (drawerBody) drawerBody.style.display = 'none';
+  if (errorPanel) errorPanel.classList.add('visible');
+
+  await renderErrorLogs();
+}
+
+/**
+ * 隐藏错误日志面板
+ */
+function hideErrorPanel() {
+  const drawer = document.getElementById(getDrawerId());
+  if (!drawer) return;
+
+  const drawerBody = drawer.querySelector('.gid-drawer-body');
+  const errorPanel = drawer.querySelector('.gid-error-panel');
+
+  if (errorPanel) errorPanel.classList.remove('visible');
+  if (drawerBody) drawerBody.style.display = 'block';
+}
+
+/**
+ * 清空错误日志
+ */
+async function clearErrorLogs() {
+  if (window.GeminiImageErrorLogger) {
+    await window.GeminiImageErrorLogger.clearErrorLogs();
+    await renderErrorLogs();
+    updateErrorButton();
+    showToast('错误日志已清空', 'success');
+  }
+}
+
+/**
+ * 更新错误日志按钮状态
+ */
+async function updateErrorButton() {
+  const drawer = document.getElementById(getDrawerId());
+  if (!drawer) return;
+
+  const errorsBtn = drawer.querySelector('.gid-btn-errors');
+  const badge = errorsBtn?.querySelector('.gid-error-badge');
+  if (!errorsBtn || !badge) return;
+
+  try {
+    const stats = window.GeminiImageErrorLogger
+      ? await window.GeminiImageErrorLogger.getErrorStats()
+      : { total: 0 };
+
+    const count = stats.total;
+    badge.textContent = count > 99 ? '99+' : count;
+    badge.style.display = count > 0 ? 'inline-block' : 'none';
+
+    if (count > 0) {
+      errorsBtn.classList.remove('no-errors');
+    } else {
+      errorsBtn.classList.add('no-errors');
+    }
+  } catch (e) {
+    getLogger().warn('UI', 'Failed to update error button', { error: e.message });
+  }
+}
+
+/**
+ * 渲染错误日志列表
+ */
+async function renderErrorLogs() {
+  const drawer = document.getElementById(getDrawerId());
+  if (!drawer) return;
+
+  const errorList = drawer.querySelector('.gid-error-list');
+  const errorCount = drawer.querySelector('.gid-error-count');
+  if (!errorList) return;
+
+  try {
+    const logs = window.GeminiImageErrorLogger
+      ? await window.GeminiImageErrorLogger.getErrorLogs()
+      : [];
+
+    if (errorCount) errorCount.textContent = logs.length;
+
+    if (logs.length === 0) {
+      errorList.innerHTML = `
+        <div class="gid-error-empty">
+          <div class="gid-error-empty-icon">✅</div>
+          <div>暂无错误记录</div>
+        </div>
+      `;
+      return;
+    }
+
+    errorList.innerHTML = logs.map(log => {
+      const time = new Date(log.timestamp).toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      const contextStr = log.context && Object.keys(log.context).length > 0
+        ? JSON.stringify(log.context, null, 2)
+        : '';
+
+      return `
+        <div class="gid-error-item">
+          <div class="gid-error-item-header">
+            <span class="gid-error-category ${log.category}">${log.category}</span>
+            <span class="gid-error-time">${time}</span>
+          </div>
+          <div class="gid-error-message">${escapeHtml(log.message)}</div>
+          ${contextStr ? `<div class="gid-error-context">${escapeHtml(contextStr)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    getLogger().error('UI', e, { context: 'renderErrorLogs' });
+    errorList.innerHTML = `
+      <div class="gid-error-empty">
+        <div class="gid-error-empty-icon">⚠️</div>
+        <div>加载错误日志失败</div>
+      </div>
+    `;
+  }
+}
+
+/**
+ * HTML 转义（防止 XSS）
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // 导出到全局

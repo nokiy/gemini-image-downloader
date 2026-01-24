@@ -14,23 +14,26 @@ const INITIAL_DISPLAY_COUNT = 10; // 初始显示数量
 const state = {
   // 检测到的图片列表
   images: [],           // DetectedImage[]
-  
+
   // 显示的图片（初始最多 10 张，展开后显示全部）
   displayImages: [],    // DetectedImage[]
-  
+
   // 是否已展开显示更多
   isExpanded: false,
-  
+
   // 选中的图片 URL 集合
   selectedUrls: new Set(),
-  
+
   // 下载队列状态
   downloadQueue: {
     tasks: [],          // 待下载任务
     currentTask: null,  // 当前正在下载的任务
     isProcessing: false // 是否正在处理
   },
-  
+
+  // 去水印开关
+  removeWatermark: true,
+
   // UI 状态
   ui: {
     isDrawerOpen: false,
@@ -164,6 +167,23 @@ function setDrawerOpen(isOpen) {
 }
 
 /**
+ * 设置去水印开关
+ * @param {boolean} enabled - 是否启用
+ */
+function setRemoveWatermark(enabled) {
+  state.removeWatermark = enabled;
+  emitStateChange('removeWatermark');
+}
+
+/**
+ * 获取去水印开关状态
+ * @returns {boolean}
+ */
+function getRemoveWatermark() {
+  return state.removeWatermark;
+}
+
+/**
  * 清空所有状态（切换对话时调用）
  */
 function clearState() {
@@ -174,6 +194,7 @@ function clearState() {
   state.ui.isIconVisible = false;
   state.ui.isDrawerOpen = false;
   state.ui.downloadStatus = 'idle';
+  emitStateChange('images');
   emitStateChange('clear');
 }
 
@@ -234,6 +255,8 @@ window.GeminiImageState = {
   getSelectedImages,
   setDownloadStatus,
   setDrawerOpen,
+  setRemoveWatermark,
+  getRemoveWatermark,
   clearState,
   onStateChange,
   offStateChange,
@@ -242,4 +265,3 @@ window.GeminiImageState = {
   hasMoreImages,
   getRemainingCount
 };
-

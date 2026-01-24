@@ -23,6 +23,7 @@ function getLogger() {
 function getSelectors() {
   return window.GeminiSelectors?.detection || {
     downloadButton: 'download-generated-image-button button[data-test-id="download-generated-image-button"]',
+    conversationRoot: ['main', '[role="main"]'],
     imageContainers: ['generated-image', 'single-image'],
     containerImage: 'img.image',
     googleImage: 'img[src*="googleusercontent.com"]',
@@ -45,6 +46,237 @@ function getThresholds() {
     minGeneratedSize: 200,
     maxIconSize: 120
   };
+}
+
+function getExtensionIds() {
+  return window.GeminiSelectors?.extension || {
+    iconId: 'gemini-downloader-icon',
+    drawerId: 'gemini-downloader-drawer',
+    overlayId: 'gemini-downloader-overlay'
+  };
+}
+
+function getImageSource(img) {
+  if (!img) return '';
+  const current = img.currentSrc || img.src;
+  if (current && typeof current === 'string') return current;
+
+  const srcset = img.getAttribute?.('srcset') || img.srcset || '';
+  if (srcset) {
+    const first = srcset.split(',')[0]?.trim();
+    const url = first?.split(' ')[0];
+    if (url) return url;
+  }
+
+  const dataSrc = img.getAttribute?.('data-src')
+    || img.getAttribute?.('data-lazy-src')
+    || img.getAttribute?.('data-original-src')
+    || img.dataset?.src
+    || img.dataset?.originalSrc;
+
+  return typeof dataSrc === 'string' ? dataSrc : '';
+}
+
+function isInExtensionUI(el) {
+  if (!el?.closest) return false;
+  const ids = getExtensionIds();
+  return !!el.closest(
+    `#${ids.iconId}, #${ids.drawerId}, #${ids.overlayId}, #gid-preview-overlay`
+  );
+}
+
+function findActiveComposer() {
+  const candidates = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]'));
+  const visible = candidates.filter(el => !isElementHidden(el));
+  if (visible.length === 0) return null;
+
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const el of visible) {
+    if (!el.getBoundingClientRect) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+
+    const score = rect.bottom * 2 + rect.width;
+    if (score > bestScore) {
+      best = el;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function hasPotentialImageContainers(root) {
+  const selectors = getSelectors();
+  const urlPatterns = getUrlPatterns();
+  const thresholds = getThresholds();
+  const scope = root && root.querySelectorAll ? root : document;
+
+  try {
+    const imgs = scope.querySelectorAll(selectors.googleImage);
+    for (const img of imgs) {
+      if (isInExtensionUI(img)) continue;
+      if (isElementHidden(img)) continue;
+      if (img.closest && img.closest('header, [role="banner"], nav, [role="navigation"]')) {
+        continue;
+      }
+
+      const url = img?.src;
+      if (!url || typeof url !== 'string') continue;
+
+      const maxDim = Math.max(
+        img?.naturalWidth ?? img?.width ?? 0,
+        img?.naturalHeight ?? img?.height ?? 0
+      );
+
+      const isAvatar = url.includes(urlPatterns.avatar) ||
+        (img?.closest && img.closest(selectors.avatarParent) !== null);
+      const isIcon = maxDim > 0 && maxDim < thresholds.maxIconSize;
+      const looksGenerated = url.includes(urlPatterns.generatedImage) || maxDim >= thresholds.minGeneratedSize;
+
+      if (looksGenerated && !isAvatar && !isIcon) return true;
+    }
+  } catch (e) {
+    // Ignore and fall through
+  }
+
+  return false;
+}
+
+function isElementHidden(el) {
+  if (!el) return true;
+  if (el.closest && el.closest('[hidden], [aria-hidden="true"]')) return true;
+
+  let current = el;
+  let depth = 0;
+  while (current && current !== document.documentElement && depth < 12) {
+    const style = window.getComputedStyle(current);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      return true;
+    }
+    current = current.parentElement;
+    depth += 1;
+  }
+
+  if (el.getClientRects && el.getClientRects().length === 0) {
+    return true;
+  }
+
+  return false;
+}
+
+function getMainContentRoot() {
+  const candidates = Array.from(document.querySelectorAll('main, [role="main"]'));
+  const visible = candidates.filter((el) => {
+    if (!el?.getBoundingClientRect) return false;
+    if (isElementHidden(el)) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+
+  if (visible.length === 0) return null;
+
+  let best = null;
+  let bestArea = -1;
+  let bestTop = Infinity;
+
+  for (const el of visible) {
+    const rect = el.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (area > bestArea || (area === bestArea && rect.top < bestTop)) {
+      best = el;
+      bestArea = area;
+      bestTop = rect.top;
+    }
+  }
+
+  return best;
+}
+
+function getConversationRoot() {
+  const selectors = getSelectors();
+  const composer = findActiveComposer();
+  const rootSelectors = Array.isArray(selectors.conversationRoot)
+    ? selectors.conversationRoot
+    : (selectors.conversationRoot ? [selectors.conversationRoot] : []);
+  const fallbackSelectors = ['main', '[role="main"]'];
+  const selectorPool = Array.from(new Set([...rootSelectors, ...fallbackSelectors]));
+
+  const candidates = [];
+  const seen = new Set();
+
+  for (const selector of selectorPool) {
+    try {
+      const matches = document.querySelectorAll(selector);
+      matches.forEach((el) => {
+        if (!seen.has(el)) {
+          seen.add(el);
+          candidates.push(el);
+        }
+      });
+    } catch (e) {
+      // Ignore invalid selector
+    }
+  }
+
+  if (candidates.length === 0) return document;
+
+  const visibleCandidates = candidates.filter((el) => {
+    if (!el?.isConnected || !el.getBoundingClientRect) return false;
+    if (isElementHidden(el)) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+
+  if (visibleCandidates.length === 0) return document;
+
+  const pickLargest = (els) => {
+    let best = null;
+    let bestArea = -1;
+    let bestTop = Infinity;
+
+    for (const el of els) {
+      const rect = el.getBoundingClientRect();
+      const area = rect.width * rect.height;
+      if (area > bestArea || (area === bestArea && rect.top < bestTop)) {
+        best = el;
+        bestArea = area;
+        bestTop = rect.top;
+      }
+    }
+
+    return best;
+  };
+
+  if (composer) {
+    const withComposer = visibleCandidates.filter(el => el.contains(composer));
+    const best = pickLargest(withComposer);
+    if (best) return best;
+  }
+
+  return pickLargest(visibleCandidates) || document;
+}
+
+function getDetectionScope() {
+  const root = getConversationRoot();
+  const mainRoot = getMainContentRoot();
+
+  if (root && root !== document && root.querySelectorAll) {
+    if (mainRoot && mainRoot !== root && mainRoot.querySelectorAll) {
+      const rootRect = root.getBoundingClientRect?.();
+      const mainRect = mainRoot.getBoundingClientRect?.();
+      if (rootRect && mainRect && mainRect.width > 0 && rootRect.width > mainRect.width * 1.2) {
+        return mainRoot;
+      }
+    }
+    return root;
+  }
+
+  if (mainRoot && mainRoot.querySelectorAll) return mainRoot;
+
+  return document;
 }
 
 /**
@@ -171,6 +403,7 @@ function findImagesByDOM() {
   const selectors = getSelectors();
   const urlPatterns = getUrlPatterns();
   const images = [];
+  const scope = getDetectionScope();
 
   try {
     // 断点防护：检查 document 是否可用
@@ -179,51 +412,121 @@ function findImagesByDOM() {
       return images;
     }
 
-    // 使用配置中的下载按钮选择器
-    const downloadButtons = document.querySelectorAll(selectors.downloadButton);
+    // 支持选择器数组或单个字符串
+    const buttonSelectors = Array.isArray(selectors.downloadButton)
+      ? selectors.downloadButton
+      : [selectors.downloadButton];
 
-    if (!downloadButtons || downloadButtons.length === 0) {
-      logger.debug('Detection', 'No download buttons found via DOM selector', {
-        selector: selectors.downloadButton
-      });
+    // 尝试所有下载按钮选择器
+    let downloadButtons = [];
+    for (const selector of buttonSelectors) {
+      try {
+        const found = scope.querySelectorAll(selector);
+        if (found && found.length > 0) {
+          downloadButtons = Array.from(found);
+          logger.debug('Detection', `Found ${found.length} buttons via: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        logger.debug('Detection', `Selector failed: ${selector}`, { error: e.message });
+      }
+    }
+
+    if (downloadButtons.length === 0) {
+      logger.debug('Detection', 'No download buttons found via any DOM selector');
       return images;
     }
 
+    // 支持容器图片选择器数组
+    const containerImageSelectors = Array.isArray(selectors.containerImage)
+      ? selectors.containerImage
+      : [selectors.containerImage];
+
     downloadButtons.forEach((btn) => {
       try {
+        if (isInExtensionUI(btn)) {
+          return;
+        }
         // 使用配置中的容器选择器列表
         let container = null;
         for (const containerSelector of selectors.imageContainers) {
           container = btn?.closest(containerSelector);
           if (container) break;
         }
-        
+
+        // 如果没找到容器，尝试向上查找包含图片的父元素
         if (!container) {
-          return; // 跳过当前循环
+          let parent = btn.parentElement;
+          for (let i = 0; i < 5 && parent; i++) {
+            const hasImage = parent.querySelector(selectors.googleImage || 'img');
+            if (hasImage) {
+              container = parent;
+              break;
+            }
+            parent = parent.parentElement;
+          }
         }
-        
-        // 使用配置中的图片选择器
-        const img = container?.querySelector(selectors.containerImage);
-        
+
+        if (!container) {
+          logger.debug('Detection', 'No container found for button');
+          return;
+        }
+        if (isInExtensionUI(container)) {
+          return;
+        }
+        if (container.closest && container.closest('aside, [role="complementary"]')) {
+          return;
+        }
+        if (scope !== document && !scope.contains(container)) {
+          logger.debug('Detection', 'Container outside detection scope');
+          return;
+        }
+        if (isElementHidden(container)) {
+          logger.debug('Detection', 'Container hidden, skipping');
+          return;
+        }
+
+        // 尝试多种图片选择器
+        let img = null;
+        for (const imgSelector of containerImageSelectors) {
+          try {
+            img = container.querySelector(imgSelector);
+            if (img && getImageSource(img)) break;
+          } catch (e) {
+            // 选择器可能无效，继续尝试
+          }
+        }
+
         // 使用配置中的 URL 模式检查
-        if (img && img.src && typeof img.src === 'string' && img.src.includes(urlPatterns.googleContent)) {
-          images.push({
-            url: getOriginalImageUrl(img.src),  // 原图URL（下载用，=s0 最高质量）
-            thumbnailUrl: img.src,              // 直接使用已加载的图片URL（浏览器缓存，即时显示）
-            element: img,
-            container: container,
-            method: 'dom'
-          });
+        const imgUrl = getImageSource(img);
+        if (imgUrl && imgUrl.includes(urlPatterns.googleContent)) {
+          if (isElementHidden(img)) {
+            logger.debug('Detection', 'Image hidden, skipping');
+            return;
+          }
+          if (isInExtensionUI(img)) {
+            return;
+          }
+          // 排除上传的图片预览
+          const isUploadedPreview = img.alt && img.alt.includes('Uploaded image');
+          if (!isUploadedPreview) {
+            images.push({
+              url: getOriginalImageUrl(imgUrl),
+              thumbnailUrl: img.currentSrc || img.src || imgUrl,
+              element: img,
+              container: container,
+              method: 'dom'
+            });
+          }
         }
       } catch (err) {
-        // 单个按钮处理失败不影响整体
         logger.warn('Detection', 'Error processing download button', { error: err.message });
       }
     });
 
     logger.debug('Detection', `Found ${images.length} images via DOM selector`);
     return images;
-    
+
   } catch (error) {
     logger.error('Detection', error, { context: 'findImagesByDOM' });
     return images;
@@ -240,6 +543,10 @@ function findImagesByURL() {
   const urlPatterns = getUrlPatterns();
   const thresholds = getThresholds();
   const images = [];
+  const scope = getDetectionScope();
+  const containerSelectors = Array.isArray(selectors.imageContainers)
+    ? selectors.imageContainers
+    : [selectors.imageContainers];
 
   try {
     // 断点防护：检查 document 是否可用
@@ -249,7 +556,10 @@ function findImagesByURL() {
     }
 
     // 使用配置中的 Google 图片选择器
-    const allImages = document.querySelectorAll(selectors.googleImage);
+    let allImages = scope.querySelectorAll(selectors.googleImage);
+    if (!allImages || allImages.length === 0) {
+      allImages = scope.querySelectorAll('img');
+    }
 
     if (!allImages || allImages.length === 0) {
       logger.debug('Detection', 'No Google images found via URL pattern', {
@@ -260,11 +570,42 @@ function findImagesByURL() {
 
     allImages.forEach((img) => {
       try {
+        if (isInExtensionUI(img)) {
+          return;
+        }
+        if (scope !== document && !scope.contains(img)) {
+          return;
+        }
+        if (isElementHidden(img)) {
+          return;
+        }
+        if (img.closest && img.closest('header, [role="banner"], nav, [role="navigation"], aside, [role="complementary"]')) {
+          return;
+        }
         // 断点防护：确保 img.src 存在且为字符串
-        const url = img?.src;
+        const url = getImageSource(img);
         if (!url || typeof url !== 'string') {
           return; // 跳过无效图片
         }
+        if (!url.includes(urlPatterns.googleContent)) {
+          return;
+        }
+
+        // 排除上传图片（用户上传的预览/历史）
+        const isUploadedPreview = (() => {
+          const alt = img?.alt || '';
+          if (alt && /uploaded image/i.test(alt)) return true;
+          if (alt && alt.includes('上传')) return true;
+          if (selectors.uploadedImagePreview) {
+            try {
+              return img.matches(selectors.uploadedImagePreview);
+            } catch (e) {
+              return false;
+            }
+          }
+          return false;
+        })();
+        if (isUploadedPreview) return;
 
         // 断点防护：安全获取图片尺寸（使用空值合并）
         const maxDim = Math.max(
@@ -273,7 +614,18 @@ function findImagesByURL() {
         );
 
         // 使用配置中的 URL 模式和阈值进行过滤
-        const isGenerated = url.includes(urlPatterns.generatedImage) || maxDim >= thresholds.minGeneratedSize;
+        const inGeneratedContainer = img.closest
+          ? containerSelectors.some(selector => {
+              try {
+                return !!img.closest(selector);
+              } catch (e) {
+                return false;
+              }
+            })
+          : false;
+        const isGenerated = url.includes(urlPatterns.generatedImage)
+          || maxDim >= thresholds.minGeneratedSize
+          || inGeneratedContainer;
         
         // 使用配置中的选择器检查头像
         const isAvatar = url.includes(urlPatterns.avatar) || 
@@ -440,4 +792,3 @@ window.GeminiImageDetection = {
   findImagesByURL,
   getOriginalImageUrl // 导出URL优化函数供调试使用
 };
-
